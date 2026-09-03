@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<VBox xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.personal.accounting.desktop.ui.RecordController"
+      styleClass="area" spacing="12" alignment="TOP_LEFT">
+    <Label text="记账录入" styleClass="h1"/>
+
+    <HBox spacing="12" alignment="CENTER_LEFT">
+        <Label text="类型" />
+        <RadioButton fx:id="rbExpense" text="支出" selected="true"/>
+        <RadioButton fx:id="rbIncome" text="收入"/>
+    </HBox>
+
+    <GridPane hgap="12" vgap="10" styleClass="form">
+        <Label text="日期" GridPane.rowIndex="0" GridPane.columnIndex="0"/>
+        <DatePicker fx:id="datePicker" GridPane.rowIndex="0" GridPane.columnIndex="1"/>
+
+        <Label text="金额" GridPane.rowIndex="1" GridPane.columnIndex="0"/>
+        <TextField fx:id="amountField" promptText="0.00" GridPane.rowIndex="1" GridPane.columnIndex="1"/>
+
+        <Label text="分类" GridPane.rowIndex="2" GridPane.columnIndex="0"/>
+        <ComboBox fx:id="categoryBox" GridPane.rowIndex="2" GridPane.columnIndex="1"/>
+
+        <Label text="账户" GridPane.rowIndex="3" GridPane.columnIndex="0"/>
+        <ComboBox fx:id="accountBox" GridPane.rowIndex="3" GridPane.columnIndex="1"/>
+
+        <Label text="备注" GridPane.rowIndex="4" GridPane.columnIndex="0"/>
+        <TextField fx:id="noteField" GridPane.rowIndex="4" GridPane.columnIndex="1"/>
+
+        <Button text="保存" onAction="#onSave" GridPane.rowIndex="5" GridPane.columnIndex="1"/>
+    </GridPane>
+
+    <Separator/>
+
+    <HBox spacing="8" alignment="CENTER_LEFT">
+        <Label text="最近流水" styleClass="h1"/>
+        <Region HBox.hgrow="ALWAYS"/>
+        <Button text="删除选中" onAction="#onDelete"/>
+    </HBox>
+
+    <TableView fx:id="table" prefHeight="360">
+        <columns>
+            <TableColumn fx:id="colDate" text="日期" prefWidth="100"/>
+            <TableColumn fx:id="colAmount" text="金额" prefWidth="110"/>
+            <TableColumn fx:id="colCategory" text="分类" prefWidth="130"/>
+            <TableColumn fx:id="colNote" text="备注" prefWidth="280"/>
+        </columns>
+    </TableView>
+</VBox>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">终端账本</string>
+    <string name="nav_record">记账</string>
+    <string name="nav_report">报表</string>
+    <string name="nav_settings">设置</string>
+    <string name="quick_record_title">快速记账</string>
+    <string name="save">保存</string>
+    <string name="voice">语音</string>
+    <string name="amount_hint">金额</string>
+    <string name="note_hint">备注（选填）</string>
+</resources>

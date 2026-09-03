@@ -1,0 +1,275 @@
+/* ============================================================
+   PersonalAccounting 桌面端主题 —— 鹰角网络·机能工业风（浅色版 + 真·毛玻璃）
+   浅灰底深灰字 · 酸橙绿 #C0FF00 点缀 · 直角 · 1px 细线 · 半透明毛玻璃面板
+   ============================================================ */
+
+/* 毛玻璃背景层：渐变 + 细网格纹理，由 DesktopApp 高斯模糊后作为面板透出 */
+.backdrop {
+    -fx-background-color:
+        linear-gradient(to bottom right, #EDEDED, #DCDCDC 55%, #D3DCE5),
+        linear-gradient(to top left, rgba(192, 255, 0, 0.06), transparent 45%);
+    -fx-background-image: url("pattern.png");
+    -fx-background-repeat: repeat;
+    -fx-background-position: center;
+}
+
+.root {
+    -fx-font-family: "Bahnschrift", "Roboto Condensed", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+    -fx-font-size: 13px;
+    -fx-background-color: #F5F5F5;
+}
+.root .label {
+    -fx-text-fill: #1A1A1A;
+}
+
+/* 关键数据（金额）用等宽字体 */
+.card-value, .card-value-income, .card-value-expense {
+    -fx-font-family: "Consolas", "Cascadia Mono", "Roboto Mono", "Bahnschrift", monospace;
+}
+
+/* ---------------- 侧边栏（仪表区）：半透明毛玻璃 + 1px 细线 ---------------- */
+.sidebar {
+    -fx-background-color: rgba(255, 255, 255, 0.42);
+    -fx-border-color: transparent rgba(0, 0, 0, 0.08) transparent transparent;
+    -fx-border-width: 0 1 0 0;
+    -fx-padding: 14 10;
+}
+.brand {
+    -fx-text-fill: #1A1A1A;
+    -fx-font-size: 24px;
+    -fx-font-weight: bold;
+    -fx-padding: 6 0 20 6;
+}
+.nav-btn {
+    -fx-background-color: transparent;
+    -fx-text-fill: #5A5A5A;
+    -fx-padding: 10 12;
+    -fx-alignment: CENTER_LEFT;
+    -fx-background-radius: 0;
+    -fx-cursor: hand;
+}
+.nav-btn:hover {
+    -fx-background-color: rgba(0, 0, 0, 0.05);
+    -fx-text-fill: #1A1A1A;
+}
+.nav-btn:selected {
+    -fx-background-color: #C0FF00;
+    -fx-text-fill: #000000;
+    -fx-font-weight: bold;
+    -fx-border-color: transparent transparent transparent #000000;
+    -fx-border-width: 0 0 0 3;
+}
+.version {
+    -fx-text-fill: #9A9A9A;
+    -fx-font-family: "Consolas", "Cascadia Mono", monospace;
+    -fx-font-size: 11px;
+}
+
+/* ---------------- 统计卡片（舞台区）：毛玻璃 ---------------- */
+.cards {
+    -fx-padding: 16;
+}
+.card {
+    -fx-background-color: rgba(255, 255, 255, 0.45);
+    -fx-padding: 14 20;
+    -fx-background-radius: 0;
+    -fx-border-color: rgba(0, 0, 0, 0.10);
+    -fx-border-width: 1;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.10), 12, 0, 0, 3);
+}
+.card-value {
+    -fx-font-size: 26px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #1A1A1A;
+}
+.card-value-income {
+    -fx-font-size: 26px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #2E9E24;
+}
+.card-value-expense {
+    -fx-font-size: 26px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #D64545;
+}
+
+/* ---------------- 内容区 ---------------- */
+.area {
+    -fx-padding: 14;
+}
+.h1 {
+    -fx-font-size: 20px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #1A1A1A;
+    -fx-padding: 0 0 8 0;
+    -fx-border-color: transparent transparent #C0FF00 transparent;
+    -fx-border-width: 0 0 1 0;
+}
+.panel {
+    -fx-background-color: rgba(255, 255, 255, 0.45);
+    -fx-padding: 16;
+    -fx-background-radius: 0;
+    -fx-border-color: rgba(0, 0, 0, 0.10);
+    -fx-border-width: 1;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.08), 12, 0, 0, 3);
+}
+.form {
+    -fx-padding: 12;
+}
+
+/* ---------------- 控件：直角 + 酸橙绿 ---------------- */
+.button {
+    -fx-background-color: #C0FF00;
+    -fx-text-fill: #000000;
+    -fx-font-weight: bold;
+    -fx-background-radius: 0;
+    -fx-padding: 8 18;
+    -fx-cursor: hand;
+}
+.button:hover {
+    -fx-background-color: #FFFFFF;
+    -fx-text-fill: #000000;
+    -fx-border-color: #C0FF00;
+    -fx-border-width: 1;
+}
+.button:pressed {
+    -fx-background-color: #C0FF00;
+    -fx-text-fill: #000000;
+    -fx-border-color: #C0FF00;
+}
+.text-field, .password-field {
+    -fx-background-color: rgba(255, 255, 255, 0.72);
+    -fx-border-color: rgba(0, 0, 0, 0.14);
+    -fx-background-radius: 0;
+    -fx-border-radius: 0;
+    -fx-padding: 8 10;
+    -fx-text-fill: #1A1A1A;
+}
+.text-field:focused, .password-field:focused {
+    -fx-border-color: #C0FF00;
+}
+.text-area {
+    -fx-background-color: rgba(255, 255, 255, 0.72);
+    -fx-border-color: rgba(0, 0, 0, 0.14);
+    -fx-background-radius: 0;
+    -fx-border-radius: 0;
+    -fx-text-fill: #1A1A1A;
+}
+.text-area:focused { -fx-border-color: #C0FF00; }
+.text-area .content {
+    -fx-background-color: rgba(255, 255, 255, 0.72);
+    -fx-background-radius: 0;
+}
+.combo-box {
+    -fx-background-color: rgba(255, 255, 255, 0.72);
+    -fx-border-color: rgba(0, 0, 0, 0.14);
+    -fx-background-radius: 0;
+    -fx-border-radius: 0;
+}
+.combo-box .list-cell {
+    -fx-text-fill: #1A1A1A;
+    -fx-background-color: rgba(255, 255, 255, 0.72);
+}
+.combo-box-popup .list-view {
+    -fx-background-color: #FFFFFF;
+    -fx-border-color: rgba(0, 0, 0, 0.14);
+}
+
+/* ---------------- 列表 ---------------- */
+.list-view {
+    -fx-background-color: rgba(255, 255, 255, 0.55);
+    -fx-background-radius: 0;
+    -fx-border-color: rgba(0, 0, 0, 0.10);
+    -fx-border-width: 1;
+}
+.list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: #1A1A1A;
+    -fx-padding: 6 10;
+    -fx-border-color: transparent transparent rgba(0, 0, 0, 0.06) transparent;
+    -fx-border-width: 0 0 1 0;
+}
+.list-cell:filled:hover { -fx-background-color: rgba(0, 0, 0, 0.04); }
+.list-cell:filled:selected {
+    -fx-background-color: rgba(192, 255, 0, 0.30);
+    -fx-text-fill: #1A1A1A;
+}
+
+/* ---------------- 滚动区 ---------------- */
+.scroll-pane { -fx-background-color: transparent; -fx-background-insets: 0; }
+.scroll-pane > .viewport { -fx-background-color: transparent; }
+.scroll-bar:vertical, .scroll-bar:horizontal { -fx-background-color: transparent; }
+.scroll-bar .thumb { -fx-background-color: rgba(0, 0, 0, 0.16); }
+
+/* ---------------- 进度条 ---------------- */
+.progress-bar { -fx-background-color: transparent; }
+.progress-bar .track { -fx-background-color: rgba(0, 0, 0, 0.10); -fx-background-radius: 0; }
+.progress-bar .bar {
+    -fx-background-color: #C0FF00;
+    -fx-background-radius: 0;
+    -fx-background-insets: 0;
+}
+
+/* ---------------- 图表 ---------------- */
+.chart { -fx-background-color: transparent; }
+.chart-plot-background { -fx-background-color: transparent; }
+.chart-vertical-grid-lines, .chart-horizontal-grid-lines { -fx-stroke: rgba(0, 0, 0, 0.08); }
+.axis { -fx-tick-label-fill: #8C8C8C; }
+.chart-legend { -fx-background-color: transparent; }
+.chart-legend .label { -fx-text-fill: #6B6B6B; }
+.default-color0.chart-pie { -fx-pie-color: #C0FF00; }
+.default-color1.chart-pie { -fx-pie-color: #4A4A4A; }
+.default-color2.chart-pie { -fx-pie-color: #C0C0C0; }
+.default-color3.chart-pie { -fx-pie-color: #D64545; }
+.default-color4.chart-pie { -fx-pie-color: #8C8C8C; }
+.default-color5.chart-pie { -fx-pie-color: #A6D800; }
+.default-color6.chart-pie { -fx-pie-color: #FFD700; }
+.default-color7.chart-pie { -fx-pie-color: #B0B0B0; }
+.default-color0.chart-series-line { -fx-stroke: #C0FF00; -fx-stroke-width: 2px; }
+.default-color0.chart-line-symbol { -fx-background-color: #FFFFFF, #C0FF00; }
+.chart-bar { -fx-bar-fill: #C0FF00; }
+
+/* ---------------- 顶部饰条 & 内容头栏 ---------------- */
+.top-accent { -fx-background-color: #C0FF00; }
+.topbar {
+    -fx-padding: 12 18;
+    -fx-background-color: rgba(255, 255, 255, 0.45);
+    -fx-border-color: transparent transparent rgba(0, 0, 0, 0.08) transparent;
+    -fx-border-width: 0 0 1 0;
+}
+.topbar-title {
+    -fx-font-size: 22px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #1A1A1A;
+}
+.topbar-status {
+    -fx-font-size: 11px;
+    -fx-font-family: "Consolas", "Cascadia Mono", monospace;
+    -fx-text-fill: #6B6B6B;
+}
+
+/* ---------------- 侧边栏分组标签 ---------------- */
+.nav-group {
+    -fx-text-fill: #A0A0A0;
+    -fx-font-size: 10px;
+    -fx-font-family: "Consolas", "Cascadia Mono", monospace;
+    -fx-padding: 12 12 2 12;
+}
+
+/* ---------------- 卡片标签 / 面板标题 / 空状态 ---------------- */
+.card-label {
+    -fx-font-size: 11px;
+    -fx-font-family: "Consolas", "Cascadia Mono", monospace;
+    -fx-text-fill: #8C8C8C;
+}
+.h2 {
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #1A1A1A;
+    -fx-padding: 0 0 6 0;
+}
+.empty-state {
+    -fx-text-fill: #A6A6A6;
+    -fx-font-size: 14px;
+    -fx-font-family: "Consolas", "Cascadia Mono", monospace;
+}

@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.chart.*?>
+<?import javafx.scene.layout.*?>
+
+<BorderPane xmlns:fx="http://javafx.com/fxml/1"
+            fx:controller="com.personal.accounting.desktop.ui.DashboardController">
+    <top>
+        <HBox spacing="16" styleClass="cards">
+            <VBox styleClass="card">
+                <Label text="本月收入" styleClass="card-label"/>
+                <Label fx:id="labelIncome" styleClass="card-value-income"/>
+            </VBox>
+            <VBox styleClass="card">
+                <Label text="本月支出" styleClass="card-label"/>
+                <Label fx:id="labelExpense" styleClass="card-value-expense"/>
+            </VBox>
+            <VBox styleClass="card">
+                <Label text="结余" styleClass="card-label"/>
+                <Label fx:id="labelBalance" styleClass="card-value"/>
+            </VBox>
+            <VBox styleClass="card">
+                <Label text="环比上月" styleClass="card-label"/>
+                <Label fx:id="labelMom" styleClass="card-value"/>
+            </VBox>
+            <VBox styleClass="card">
+                <Label text="同步" styleClass="card-label"/>
+                <Button fx:id="btnSync" text="立即同步" onAction="#onSync"/>
+            </VBox>
+        </HBox>
+    </top>
+    <center>
+        <ScrollPane fitToWidth="true">
+            <VBox spacing="16" styleClass="area">
+                <HBox spacing="16">
+                    <VBox styleClass="panel">
+                        <Label text="支出构成" styleClass="h2"/>
+                        <StackPane>
+                            <PieChart fx:id="pie" prefHeight="220"/>
+                            <Label fx:id="pieEmpty" text="暂无数据" styleClass="empty-state" visible="false"/>
+                        </StackPane>
+                    </VBox>
+                    <VBox styleClass="panel">
+                        <Label text="近30天支出" styleClass="h2"/>
+                        <StackPane>
+                            <LineChart fx:id="line" prefHeight="220">
+                                <xAxis>
+                                    <NumberAxis/>
+                                </xAxis>
+                                <yAxis>
+                                    <NumberAxis/>
+                                </yAxis>
+                            </LineChart>
+                            <Label fx:id="lineEmpty" text="暂无数据" styleClass="empty-state" visible="false"/>
+                        </StackPane>
+                    </VBox>
+                </HBox>
+                <VBox styleClass="panel">
+                    <Label text="预算进度" styleClass="h2"/>
+                    <StackPane>
+                        <VBox fx:id="budgetBox" spacing="6"/>
+                        <Label fx:id="budgetEmpty" text="暂无数据" styleClass="empty-state" visible="false"/>
+                    </StackPane>
+                </VBox>
+                <VBox styleClass="panel">
+                    <Label text="年度日历热力图" styleClass="h2"/>
+                    <StackPane>
+                        <GridPane fx:id="heatmap" hgap="2" vgap="2"/>
+                        <Label fx:id="heatEmpty" text="暂无数据" styleClass="empty-state" visible="false"/>
+                    </StackPane>
+                </VBox>
+                <VBox styleClass="panel">
+                    <Label text="AI 消费分析" styleClass="h2"/>
+                    <TextArea fx:id="aiReport" editable="false" prefHeight="140"/>
+                </VBox>
+            </VBox>
+        </ScrollPane>
+    </center>
+</BorderPane>

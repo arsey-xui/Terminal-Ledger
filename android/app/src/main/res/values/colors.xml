@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 鹰角网络 Arknights 机能工业风（浅色版）：浅灰底深灰字 + 酸橙绿点缀 -->
+    <color name="primary">#C0FF00</color>
+    <color name="primary_dark">#A6D800</color>
+    <color name="accent">#C0FF00</color>
+    <color name="background">#F5F5F5</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="card">#FAFAFA</color>
+    <color name="income">#2E9E24</color>
+    <color name="expense">#D64545</color>
+    <color name="text_primary">#1A1A1A</color>
+    <color name="text_secondary">#8C8C8C</color>
+    <color name="hairline">#D9D9D9</color>
+</resources>

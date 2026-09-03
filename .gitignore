@@ -1,0 +1,89 @@
+# ---------- Java ----------
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+*.jnilib
+
+# ---------- Maven ----------
+target/
+.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# ---------- Gradle ----------
+.gradle/
+build/
+out/
+
+# ---------- Android ----------
+android/local.properties
+android/app/build/
+android/app/release/
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# ---------- IDE ----------
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+*.classpath
+.project
+.settings/
+
+# ---------- Databases (local caches) ----------
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.mv.db
+*.mv.db.trace
+*.trace.db
+*.h2.db
+
+# ---------- Logs ----------
+*.log
+logs/
+log/
+
+# ---------- OS / system ----------
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ---------- Secrets / local config overrides ----------
+application-local.yml
+application-dev.yml
+*.env
+.env
+env/
+android/keystore.properties
+android/*.jks
+android/*.keystore
+
+# ---------- Uploaded media ----------
+backend/uploads/
+
+# ---------- Misc ----------
+*.bak
+*.tmp
+*.swp
+*~
+.idea_modules/
+
+# ---------- 打包产物（二进制，不进仓库；发布走 GitHub Releases） ----------
+outputs/portable3/
+outputs/apk/
+
+# ---------- 本机 Maven 镜像/插件组配置（含本机路径，勿提交） ----------
+maven-settings-local.xml
+
+# ---------- 本地 Maven 仓库 / 临时脚手架 ----------
+.m2-local/
+work/

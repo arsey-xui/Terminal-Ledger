@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<BorderPane xmlns:fx="http://javafx.com/fxml/1"
+            fx:controller="com.personal.accounting.desktop.ui.MainController">
+    <top>
+        <Region styleClass="top-accent" prefHeight="3"/>
+    </top>
+    <left>
+        <VBox styleClass="sidebar" prefWidth="200">
+            <Label text="终端账本" styleClass="brand"/>
+            <Label text="报表" styleClass="nav-group"/>
+            <ToggleButton fx:id="navDashboard" text="仪表盘" styleClass="nav-btn" onAction="#onDashboard"/>
+            <Label text="记账" styleClass="nav-group"/>
+            <ToggleButton fx:id="navRecord" text="记账入口" styleClass="nav-btn" onAction="#onRecord"/>
+            <ToggleButton fx:id="navAccount" text="账户管理" styleClass="nav-btn" onAction="#onAccount"/>
+            <ToggleButton fx:id="navBudget" text="预算管理" styleClass="nav-btn" onAction="#onBudget"/>
+            <Label text="数据" styleClass="nav-group"/>
+            <ToggleButton fx:id="navData" text="数据管理" styleClass="nav-btn" onAction="#onData"/>
+            <Region VBox.vgrow="ALWAYS"/>
+            <Label text="v0.1.0" styleClass="version"/>
+        </VBox>
+    </left>
+    <center>
+        <VBox>
+            <HBox styleClass="topbar" alignment="CENTER_LEFT" spacing="12">
+                <Label fx:id="headerTitle" text="仪表盘" styleClass="topbar-title"/>
+                <Region HBox.hgrow="ALWAYS"/>
+                <Label fx:id="headerStatus" text="● 离线优先 · 本地模式" styleClass="topbar-status"/>
+            </HBox>
+            <StackPane fx:id="content" VBox.vgrow="ALWAYS"/>
+        </VBox>
+    </center>
+</BorderPane>
