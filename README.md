@@ -1,10 +1,6 @@
-# 终端账本 Terminal-Ledger · 个人双端同步记账系统 (Java 生态)
+# 终端账本 Terminal-Ledger · 个人双端同步记账系统 
 
-一套 **离线优先、双端同步** 的个人记账系统，覆盖 Android 手机端、JavaFX 电脑端与 Spring Boot 云端同步服务。代码从第一天起就按开源标准组织，可直接推送到 GitHub。
-
-> GitHub 建议仓库名：`Terminal-Ledger`
->
-> 协议：MIT
+一套 **离线优先、双端同步** 的个人记账系统，覆盖 Android 手机端、JavaFX 电脑端与 Spring Boot 云端同步服务。
 
 ---
 
@@ -30,7 +26,7 @@
 
 ---
 
-## 核心功能截图
+## 核心功能截图占位
 
 - `docs/screenshots/android-record.png` — 手机端快速记账页（数字键盘 + 分类快捷图标）
 - `docs/screenshots/android-report.png` — 手机端报表页（饼图 + 趋势线）
@@ -49,8 +45,6 @@ Terminal-Ledger/
 ├── desktop/        # JavaFX 桌面客户端 (Maven)
 ├── sql/            # 云端 MySQL DDL + 示例数据
 ├── docs/           # ER 图、架构、同步协议、API、AI 设计
-├── scripts/        # 一键启动/打包脚本（start-backend, build-*）
-├── outputs/        # 构建产物（已被 .gitignore 忽略，发布走 GitHub Releases）
 ├── README.md
 ├── LICENSE
 └── .gitignore
@@ -114,7 +108,7 @@ docker compose up -d      # 起 MySQL + 后端
 
 ### 3. 电脑端（JavaFX）
 
-**直接运行便携版（推荐）**：双击 `outputs\TerminalLedger\TerminalLedger.exe`（免安装、自带运行环境，可用 `.\scripts\build-desktop-installer.ps1` 重新生成）。
+**直接运行便携版（推荐）**：双击 `outputs\portable3\TerminalLedger\TerminalLedger.exe`（免安装、自带运行环境）。
 
 **或用源码运行**：
 
@@ -187,7 +181,6 @@ mysql -u root -p < sql/init.sql
 - [docs/VOICE-AND-WIDGET.md](docs/VOICE-AND-WIDGET.md) — 语音记账与小组件
 - [docs/BUILD-AND-RELEASE.md](docs/BUILD-AND-RELEASE.md) — 桌面包 / Android APK / Docker 一键出包
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 整体架构
-- [docs/INSTALL.md](docs/INSTALL.md) — 零基础安装指南（JDK/Maven/Android Studio/MySQL）
 - [docs/UI-SPEC.md](docs/UI-SPEC.md) — 多端 UI 布局
 
 ---
