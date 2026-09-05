@@ -29,6 +29,11 @@ public class DesktopApp extends Application {
         scene.getStylesheets().add(Objects.requireNonNull(
                 getClass().getResource("/css/app.css")).toExternalForm());
         stage.setTitle("终端账本");
+        // 窗口/任务栏图标：使用打包进 jar 的 /icon.png（仓库根 icon.png 的资源副本）
+        var iconRes = getClass().getResource("/icon.png");
+        if (iconRes != null) {
+            stage.getIcons().add(new javafx.scene.image.Image(iconRes.toExternalForm()));
+        }
         stage.setScene(scene);
         stage.show();
     }

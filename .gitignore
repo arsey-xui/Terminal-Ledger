@@ -70,6 +70,12 @@ android/*.keystore
 # ---------- Uploaded media ----------
 backend/uploads/
 
+# ---------- Backend runtime ----------
+backend/.backend.pid
+
+# ---------- Generated desktop app icon (built by scripts/generate-desktop-icon.ps1) ----------
+desktop/app.ico
+
 # ---------- Misc ----------
 *.bak
 *.tmp
@@ -80,6 +86,7 @@ backend/uploads/
 # ---------- 打包产物（二进制，不进仓库；发布走 GitHub Releases） ----------
 outputs/portable3/
 outputs/apk/
+outputs/TerminalLedger/
 
 # ---------- 本机 Maven 镜像/插件组配置（含本机路径，勿提交） ----------
 maven-settings-local.xml

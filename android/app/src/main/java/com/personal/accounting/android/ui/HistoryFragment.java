@@ -112,8 +112,8 @@ public class HistoryFragment extends Fragment {
 
     private String catName(String id) {
         if (id == null) return "未分类";
-        for (Category c : catRepo.listExpense()) if (id.equals(c.clientId)) return c.name;
-        return "未分类";
+        Category c = catRepo.findActive(id);
+        return c != null ? c.name : "未分类";
     }
 
     private String accName(String id) {

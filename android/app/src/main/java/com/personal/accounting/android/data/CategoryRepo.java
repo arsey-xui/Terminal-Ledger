@@ -61,6 +61,14 @@ public class CategoryRepo {
         }
     }
 
+    /** 仅返回「未删除」的分类（不论支出/收入），用于 UI 解析分类名；避免查到已被软删除的墓碑。 */
+    public Category findActive(String clientId) {
+        try (Cursor c = rw().query("category", null, "client_id=? AND deleted=0",
+                new String[]{clientId}, null, null, null)) {
+            return c.moveToFirst() ? fromCursor(c) : null;
+        }
+    }
+
     /** 自 last_modified > since 的全部分类（含已删除墓碑，用于同步删除）。 */
     public List<Category> listModifiedSince(long since) {
         List<Category> list = new ArrayList<>();

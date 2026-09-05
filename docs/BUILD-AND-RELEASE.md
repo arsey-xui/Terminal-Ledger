@@ -7,8 +7,8 @@
 | 产物 | 构建设置 | 一键命令 | 产物位置 |
 | --- | --- | --- | --- |
 | 后端容器 | `docker-compose.yml` + `backend/Dockerfile` | `docker compose up -d` | 运行中的服务 |
-| 桌面包 | `desktop/pom.xml`(shade) + `scripts/build-desktop-installer.ps1` | `.\scripts\build-desktop-installer.ps1` | `desktop\target\dist\PersonalAccounting` |
-| Android APK | `android/app/build.gradle`(签名) + `scripts/build-android-release.ps1` | `.\scripts\build-android-release.ps1 -GenerateKeystore` | `android\app\build\outputs\apk\release\app-release.apk` |
+| 桌面包 | `desktop/pom.xml`(shade) + `scripts/build-desktop-installer.ps1` | `.\scripts\build-desktop-installer.ps1` | `outputs\TerminalLedger\TerminalLedger.exe` |
+| Android APK | `android/app/build.gradle`(签名) + `scripts/build-android-release.ps1` | `.\scripts\build-android-release.ps1 -GenerateKeystore` | `outputs\apk\TerminalLedger-v0.1.0.apk` |
 
 ---
 
@@ -36,7 +36,7 @@ docker compose up -d
 .\scripts\build-desktop-installer.ps1
 ```
 
-- 默认生成 **app-image**：`desktop\target\dist\PersonalAccounting\PersonalAccounting.exe`，**双击即用**，无需 JDK。
+- 默认生成 **app-image**：`outputs\TerminalLedger\TerminalLedger.exe`，**双击即用**，无需 JDK。
 - 想要 MSI 安装包（需本机装 WiX 3.x）：
   ```powershell
   .\scripts\build-desktop-installer.ps1 -Version 0.1.0 -Msi
@@ -63,7 +63,7 @@ docker compose up -d
 .\scripts\build-android-release.ps1
 ```
 
-产物：`android\app\build\outputs\apk\release\app-release.apk`。
+产物：`outputs\apk\TerminalLedger-v0.1.0.apk`（及同名 `.zip`）。
 
 把它传到手机（QQ/网盘/数据线均可）→ 手机安装时允许“安装未知来源应用”。
 

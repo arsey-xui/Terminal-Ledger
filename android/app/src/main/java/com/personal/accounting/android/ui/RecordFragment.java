@@ -143,7 +143,7 @@ public class RecordFragment extends Fragment {
         EditText input = new EditText(requireContext());
         input.setHint("分类名称，如：宠物");
         new AlertDialog.Builder(requireContext())
-                .setTitle("新增支出分类")
+                .setTitle(isIncome ? "新增收入分类" : "新增支出分类")
                 .setView(input)
                 .setPositiveButton("确定", (d, w) -> {
                     String name = input.getText().toString().trim();
@@ -340,7 +340,7 @@ public class RecordFragment extends Fragment {
     private String checkBudgetAlert(String categoryId) {
         if (isIncome) return null;
         LocalDate now = LocalDate.now();
-        Budget b = budgetRepo.findByKey(categoryId, now.getYear(), now.getMonthValue());
+        Budget b = budgetRepo.findActiveByKey(categoryId, now.getYear(), now.getMonthValue());
         if (b == null || b.amountLimit <= 0) return null;
         double used = txRepo.categoryExpense(categoryId, now.getYear(), now.getMonthValue());
         double pct = (used / b.amountLimit) * 100;

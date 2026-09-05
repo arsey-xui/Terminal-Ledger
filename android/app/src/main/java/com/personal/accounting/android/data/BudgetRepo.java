@@ -53,6 +53,19 @@ public class BudgetRepo {
         }
     }
 
+    /**
+     * 仅返回「未删除」的预算（deleted=0）。
+     * UI 在判断某分类是否设置了预算上限时使用，避免软删除墓碑仍被当成“已设置”。
+     * LWW 合并 {@link #upsertLww} 仍用 {@link #findByKey}（需要能看见墓碑以比较 lastModified）。
+     */
+    public Budget findActiveByKey(String categoryClientId, int year, int month) {
+        try (Cursor c = rw().query("budget", null,
+                "category_client_id=? AND budget_year=? AND budget_month=? AND deleted=0",
+                new String[]{categoryClientId, String.valueOf(year), String.valueOf(month)}, null, null, null)) {
+            return c.moveToFirst() ? fromCursor(c) : null;
+        }
+    }
+
     /** 自 last_modified > since 的全部预算（含已删除墓碑）。 */
     public List<Budget> listModifiedSince(long since) {
         List<Budget> list = new ArrayList<>();

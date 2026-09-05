@@ -94,13 +94,17 @@ public class SettingsFragment extends Fragment {
     }
 
     private void manageCategories() {
-        List<Category> cats = catRepo.listExpense();
+        // 同时管理支出与收入分类
+        List<Category> cats = catRepo.all();
         if (cats.isEmpty()) {
             Toast.makeText(requireContext(), "暂无分类", Toast.LENGTH_SHORT).show();
             return;
         }
         String[] names = new String[cats.size()];
-        for (int i = 0; i < cats.size(); i++) names[i] = cats.get(i).name;
+        for (int i = 0; i < cats.size(); i++) {
+            Category c = cats.get(i);
+            names[i] = "INCOME".equals(c.type) ? c.name + "（收入）" : c.name + "（支出）";
+        }
         new AlertDialog.Builder(requireContext())
                 .setTitle("管理分类")
                 .setItems(names, (d, which) -> {

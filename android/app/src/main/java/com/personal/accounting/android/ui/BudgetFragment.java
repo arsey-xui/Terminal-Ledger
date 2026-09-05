@@ -84,7 +84,8 @@ public class BudgetFragment extends Fragment {
         catLabel.setText((cat.icon == null ? "" : cat.icon + " ") + cat.name);
         limitEdit.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
 
-        Budget existing = budgetRepo.findByKey(cat.clientId, year, month);
+        // 用 findActiveByKey：软删除（墓碑）的预算不算已设置上限，显示“未设置上限”
+        Budget existing = budgetRepo.findActiveByKey(cat.clientId, year, month);
         double used = txRepo.categoryExpense(cat.clientId, year, month);
         double limit = 0;
         if (existing != null) {
