@@ -88,7 +88,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:text="近30天每日支出" />
+            android:text="近30天每日净支出" />
         <com.github.mikephil.charting.charts.LineChart
             android:id="@+id/trend"
             android:layout_width="match_parent"

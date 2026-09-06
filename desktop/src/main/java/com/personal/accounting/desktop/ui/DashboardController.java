@@ -7,7 +7,6 @@ import com.personal.accounting.desktop.model.Transaction;
 import com.personal.accounting.desktop.service.AiConfig;
 import com.personal.accounting.desktop.service.AiReportGenerator;
 import com.personal.accounting.desktop.sync.SyncManager;
-import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.scene.Node;
 import javafx.scene.chart.LineChart;
@@ -50,7 +49,7 @@ public class DashboardController {
     @FXML
     public void initialize() {
         pie.setTitle("支出构成");
-        line.setTitle("近30天净支出");
+        line.setTitle("近30天每日净支出");
         AiConfig.load();
         if (AiConfig.isSet()) {
             refresh();
@@ -221,19 +220,34 @@ public class DashboardController {
             }
         });
 
-        // 悬停/点击数据点：显示具体值（日期 + 净支出金额）
+        // 悬停/点击数据点：显示具体值（日期 + 净支出金额）。
+        // 直接按鼠标最近的数据点节点定位，避免依赖节点布局时机。
         final DateTimeFormatter dayFmt = DateTimeFormatter.ofPattern("M.d");
-        Platform.runLater(() -> {
+        final Tooltip tip = new Tooltip();
+        line.setOnMouseMoved(e -> {
+            XYChart.Data<Number, Number> best = null;
+            double bestDist = Double.MAX_VALUE;
+            double sx = e.getSceneX(), sy = e.getSceneY();
             for (XYChart.Data<Number, Number> d : series.getData()) {
-                Node node = d.getNode();
-                if (node != null) {
-                    int idx = d.getXValue().intValue();
-                    LocalDate day = s.plusDays(idx);
-                    Tooltip.install(node, new Tooltip(
-                            day.format(dayFmt) + "  ¥" + String.format("%.2f", netPerDay.get(idx))));
+                Node n = d.getNode();
+                if (n == null) continue;
+                var c = n.localToScene(n.getBoundsInLocal().getCenterX(), n.getBoundsInLocal().getCenterY());
+                double dist = Math.hypot(sx - c.getX(), sy - c.getY());
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    best = d;
                 }
             }
+            if (best != null && bestDist < 60) {
+                int idx = best.getXValue().intValue();
+                LocalDate day = s.plusDays(idx);
+                tip.setText(day.format(dayFmt) + "  净支出 ¥" + String.format("%.2f", netPerDay.get(idx)));
+                tip.show(line, e.getScreenX(), e.getScreenY() + 14);
+            } else {
+                tip.hide();
+            }
         });
+        line.setOnMouseExited(e -> tip.hide());
     }
 
     private void renderBudget(LocalDate now) {
