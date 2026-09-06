@@ -1,7 +1,8 @@
 package com.personal.accounting.android.ui;
 
-import android.graphics.Color;
+import android.content.Context;
 import android.content.res.ColorStateList;
+import android.graphics.Color;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -17,6 +18,7 @@ import androidx.fragment.app.Fragment;
 
 import com.github.mikephil.charting.charts.LineChart;
 import com.github.mikephil.charting.charts.PieChart;
+import com.github.mikephil.charting.components.MarkerView;
 import com.github.mikephil.charting.components.XAxis;
 import com.github.mikephil.charting.data.Entry;
 import com.github.mikephil.charting.data.LineData;
@@ -26,6 +28,8 @@ import com.github.mikephil.charting.data.PieDataSet;
 import com.github.mikephil.charting.data.PieEntry;
 import com.github.mikephil.charting.formatter.IndexAxisValueFormatter;
 import com.github.mikephil.charting.formatter.ValueFormatter;
+import com.github.mikephil.charting.highlight.Highlight;
+import com.github.mikephil.charting.utils.MPPointF;
 import com.personal.accounting.android.R;
 import com.personal.accounting.android.data.BudgetRepo;
 import com.personal.accounting.android.data.CategoryRepo;
@@ -34,6 +38,7 @@ import com.personal.accounting.android.model.Budget;
 import com.personal.accounting.android.model.Category;
 
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -120,21 +125,24 @@ public class ReportFragment extends Fragment {
         chart.setNoDataTextColor(Color.parseColor("#A6A6A6"));
         int days = 30;
         LocalDate start = LocalDate.now().minusDays(days - 1L);
-        Map<LocalDate, Double> perDay = new LinkedHashMap<>();
+        // 净支出 = 支出 - 收入，逐日汇总
+        Map<LocalDate, Double> perDayExp = new LinkedHashMap<>();
+        Map<LocalDate, Double> perDayInc = new LinkedHashMap<>();
         for (var t : txRepo.listRecent(1000000)) {
-            if (!"EXPENSE".equals(t.type) || t.date == null) continue;
-            if (!t.date.isBefore(start) && !t.date.isAfter(LocalDate.now())) {
-                perDay.merge(t.date, t.amount, Double::sum);
-            }
+            if (t.date == null) continue;
+            if (t.date.isBefore(start) || t.date.isAfter(LocalDate.now())) continue;
+            if ("EXPENSE".equals(t.type)) perDayExp.merge(t.date, t.amount, Double::sum);
+            else if ("INCOME".equals(t.type)) perDayInc.merge(t.date, t.amount, Double::sum);
         }
         List<Entry> entries = new ArrayList<>();
         List<String> labels = new ArrayList<>();
         for (int i = 0; i < days; i++) {
             LocalDate d = start.plusDays(i);
             labels.add(d.getDayOfMonth() + "");
-            entries.add(new Entry(i, perDay.getOrDefault(d, 0.0).floatValue()));
+            double net = perDayExp.getOrDefault(d, 0.0) - perDayInc.getOrDefault(d, 0.0);
+            entries.add(new Entry(i, (float) net));
         }
-        LineDataSet ds = new LineDataSet(entries, "每日支出");
+        LineDataSet ds = new LineDataSet(entries, "每日净支出");
         ds.setColor(Color.parseColor("#C0FF00"));
         ds.setLineWidth(2f);
         ds.setDrawFilled(true);
@@ -150,9 +158,8 @@ public class ReportFragment extends Fragment {
         chart.getXAxis().setTextColor(Color.parseColor("#8C8C8C"));
         chart.getDescription().setEnabled(false);
         chart.getAxisRight().setEnabled(false);
-        chart.getAxisLeft().setAxisMinimum(0);
+        // 净支出可为负，不强制 Y 轴最小值为 0
         chart.getAxisLeft().setTextColor(Color.parseColor("#8C8C8C"));
-        // 横纵坐标显示具体数值：Y 轴把金额数值格式化，X 轴显示对应日期和金额
         chart.getAxisLeft().setValueFormatter(new ValueFormatter() {
             @Override
             public String getFormattedValue(float value) {
@@ -160,7 +167,35 @@ public class ReportFragment extends Fragment {
             }
         });
         chart.getLegend().setTextColor(Color.parseColor("#6B6B6B"));
+        // 点击数据点：显示具体值（日期 + 净支出金额）
+        chart.setMarker(new DayMarker(requireContext(), start));
         chart.invalidate();
+    }
+
+    /** 点击数据点时弹出的标记：显示“日期 + 净支出金额”。 */
+    private static class DayMarker extends MarkerView {
+        private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("M.d");
+        private final TextView tv;
+        private final LocalDate start;
+
+        DayMarker(Context context, LocalDate start) {
+            super(context, R.layout.marker_view);
+            this.start = start;
+            tv = findViewById(R.id.marker_text);
+        }
+
+        @Override
+        public void refreshContent(Entry e, Highlight highlight) {
+            LocalDate d = start.plusDays((int) e.getX());
+            tv.setText(d.format(FMT) + "  ¥" + String.format("%.2f", e.getY()));
+            super.refreshContent(e, highlight);
+        }
+
+        @Override
+        public MPPointF getOffset() {
+            MPPointF o = super.getOffset();
+            return new MPPointF(-(tv.getWidth() / 2f), -tv.getHeight());
+        }
     }
 
     private void renderBudget(View v) {

@@ -7,7 +7,9 @@ import com.personal.accounting.desktop.model.Transaction;
 import com.personal.accounting.desktop.service.AiConfig;
 import com.personal.accounting.desktop.service.AiReportGenerator;
 import com.personal.accounting.desktop.sync.SyncManager;
+import javafx.application.Platform;
 import javafx.fxml.FXML;
+import javafx.scene.Node;
 import javafx.scene.chart.LineChart;
 import javafx.scene.chart.NumberAxis;
 import javafx.scene.chart.PieChart;
@@ -23,6 +25,8 @@ import javafx.util.StringConverter;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -46,7 +50,7 @@ public class DashboardController {
     @FXML
     public void initialize() {
         pie.setTitle("支出构成");
-        line.setTitle("近30天支出");
+        line.setTitle("近30天净支出");
         AiConfig.load();
         if (AiConfig.isSet()) {
             refresh();
@@ -164,20 +168,31 @@ public class DashboardController {
     private void renderLine(LocalDate now) {
         int days = 30;
         LocalDate s = now.minusDays(days - 1L);
-        Map<LocalDate, BigDecimal> perDay = db.listTransactions(s, now, null, null).stream()
-                .filter(t -> "EXPENSE".equals(t.type))
-                .collect(Collectors.groupingBy(t -> t.date,
-                        Collectors.reducing(BigDecimal.ZERO, t -> t.amount == null ? BigDecimal.ZERO : t.amount, BigDecimal::add)));
-        lineHasData = !perDay.isEmpty();
+        // 净支出 = 支出 - 收入，逐日汇总
+        List<Transaction> txns = db.listTransactions(s, now, null, null);
+        Map<LocalDate, BigDecimal> perDayExp = new HashMap<>();
+        Map<LocalDate, BigDecimal> perDayInc = new HashMap<>();
+        for (Transaction t : txns) {
+            if (t.date == null) continue;
+            BigDecimal amt = t.amount == null ? BigDecimal.ZERO : t.amount;
+            if ("EXPENSE".equals(t.type)) perDayExp.merge(t.date, amt, BigDecimal::add);
+            else if ("INCOME".equals(t.type)) perDayInc.merge(t.date, amt, BigDecimal::add);
+        }
+        lineHasData = !txns.isEmpty();
         XYChart.Series<Number, Number> series = new XYChart.Series<>();
+        List<Double> netPerDay = new ArrayList<>();
         for (int i = 0; i < days; i++) {
             LocalDate d = s.plusDays(i);
-            series.getData().add(new XYChart.Data<>(i, perDay.getOrDefault(d, BigDecimal.ZERO).doubleValue()));
+            double net = perDayExp.getOrDefault(d, BigDecimal.ZERO)
+                    .subtract(perDayInc.getOrDefault(d, BigDecimal.ZERO)).doubleValue();
+            netPerDay.add(net);
+            series.getData().add(new XYChart.Data<>(i, net));
         }
         line.getData().setAll(series);
-        line.setCreateSymbols(false);
+        // 启用数据点符号，使每个点可悬停/点击查看数值
+        line.setCreateSymbols(true);
 
-        // 横纵坐标显示具体数值：X 轴把索引映射成日期，Y 轴显示金额
+        // X 轴：索引映射成日期；Y 轴：净支出金额
         NumberAxis xAxis = (NumberAxis) line.getXAxis();
         xAxis.setTickUnit(5);
         xAxis.setLabel("日期");
@@ -193,7 +208,7 @@ public class DashboardController {
             }
         });
         NumberAxis yAxis = (NumberAxis) line.getYAxis();
-        yAxis.setLabel("支出(元)");
+        yAxis.setLabel("净支出(元)");
         yAxis.setTickLabelFormatter(new StringConverter<Number>() {
             @Override
             public String toString(Number n) {
@@ -203,6 +218,20 @@ public class DashboardController {
             @Override
             public Number fromString(String string) {
                 return null;
+            }
+        });
+
+        // 悬停/点击数据点：显示具体值（日期 + 净支出金额）
+        final DateTimeFormatter dayFmt = DateTimeFormatter.ofPattern("M.d");
+        Platform.runLater(() -> {
+            for (XYChart.Data<Number, Number> d : series.getData()) {
+                Node node = d.getNode();
+                if (node != null) {
+                    int idx = d.getXValue().intValue();
+                    LocalDate day = s.plusDays(idx);
+                    Tooltip.install(node, new Tooltip(
+                            day.format(dayFmt) + "  ¥" + String.format("%.2f", netPerDay.get(idx))));
+                }
             }
         });
     }
