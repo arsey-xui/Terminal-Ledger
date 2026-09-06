@@ -26,16 +26,6 @@
 
 ---
 
-## 核心功能截图占位
-
-- `docs/screenshots/android-record.png` — 手机端快速记账页（数字键盘 + 分类快捷图标）
-- `docs/screenshots/android-report.png` — 手机端报表页（饼图 + 趋势线）
-- `docs/screenshots/desktop-dashboard.png` — 电脑端仪表盘（所有图表全景）
-- `docs/screenshots/android-widget.png` — Android 桌面小组件
-- `docs/screenshots/desktop-budget.png` — 电脑端预算进度条
-
----
-
 ## 目录结构
 
 ```
