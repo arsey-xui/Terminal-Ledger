@@ -140,17 +140,26 @@ public class RecordFragment extends Fragment {
     }
 
     private void addCategoryDialog() {
-        EditText input = new EditText(requireContext());
-        input.setHint("分类名称，如：宠物");
+        LinearLayout box = new LinearLayout(requireContext());
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(24), 0, dp(24), 0);
+        EditText nameInput = new EditText(requireContext());
+        nameInput.setHint("分类名称，如：宠物");
+        EditText iconInput = new EditText(requireContext());
+        iconInput.setHint("图标 emoji（可留空），如：🐱");
+        box.addView(nameInput);
+        box.addView(iconInput);
         new AlertDialog.Builder(requireContext())
                 .setTitle(isIncome ? "新增收入分类" : "新增支出分类")
-                .setView(input)
+                .setView(box)
                 .setPositiveButton("确定", (d, w) -> {
-                    String name = input.getText().toString().trim();
+                    String name = nameInput.getText().toString().trim();
                     if (name.isEmpty()) return;
+                    String icon = iconInput.getText().toString().trim();
                     Category c = new Category();
                     c.clientId = UUID.randomUUID().toString();
                     c.name = name;
+                    c.icon = icon.isEmpty() ? null : icon;
                     c.type = isIncome ? "INCOME" : "EXPENSE";
                     c.lastModified = System.currentTimeMillis();
                     c.deleted = false;
@@ -161,6 +170,10 @@ public class RecordFragment extends Fragment {
                 })
                 .setNegativeButton("取消", null)
                 .show();
+    }
+
+    private int dp(int v) {
+        return Math.round(requireContext().getResources().getDisplayMetrics().density * v);
     }
 
     private void matchCategory(String name) {

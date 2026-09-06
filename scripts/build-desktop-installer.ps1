@@ -37,6 +37,10 @@ try {
     if (-not $jar) { throw "Build output jar not found." }
 
     $inputDir = Join-Path $desktop "target\jpackage-input"
+    # Clean jpackage-input so a stale jar from a previous version is not bundled.
+    if (Test-Path -LiteralPath $inputDir) {
+        Remove-Item -LiteralPath $inputDir -Recurse -Force
+    }
     New-Item -ItemType Directory -Force -Path $inputDir | Out-Null
     Copy-Item $jar.FullName (Join-Path $inputDir $jar.Name) -Force
 

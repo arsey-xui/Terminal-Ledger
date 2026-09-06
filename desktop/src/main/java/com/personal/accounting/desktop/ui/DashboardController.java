@@ -9,6 +9,7 @@ import com.personal.accounting.desktop.service.AiReportGenerator;
 import com.personal.accounting.desktop.sync.SyncManager;
 import javafx.fxml.FXML;
 import javafx.scene.chart.LineChart;
+import javafx.scene.chart.NumberAxis;
 import javafx.scene.chart.PieChart;
 import javafx.scene.chart.XYChart;
 import javafx.scene.control.*;
@@ -17,9 +18,11 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
+import javafx.util.StringConverter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -173,6 +176,35 @@ public class DashboardController {
         }
         line.getData().setAll(series);
         line.setCreateSymbols(false);
+
+        // 横纵坐标显示具体数值：X 轴把索引映射成日期，Y 轴显示金额
+        NumberAxis xAxis = (NumberAxis) line.getXAxis();
+        xAxis.setTickUnit(5);
+        xAxis.setLabel("日期");
+        xAxis.setTickLabelFormatter(new StringConverter<Number>() {
+            @Override
+            public String toString(Number n) {
+                return s.plusDays(n.intValue()).format(DateTimeFormatter.ofPattern("MM-dd"));
+            }
+
+            @Override
+            public Number fromString(String string) {
+                return null;
+            }
+        });
+        NumberAxis yAxis = (NumberAxis) line.getYAxis();
+        yAxis.setLabel("支出(元)");
+        yAxis.setTickLabelFormatter(new StringConverter<Number>() {
+            @Override
+            public String toString(Number n) {
+                return String.format("%.0f", n.doubleValue());
+            }
+
+            @Override
+            public Number fromString(String string) {
+                return null;
+            }
+        });
     }
 
     private void renderBudget(LocalDate now) {

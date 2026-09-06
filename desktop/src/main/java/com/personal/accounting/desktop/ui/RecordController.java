@@ -8,6 +8,7 @@ import com.personal.accounting.desktop.sync.SyncManager;
 import javafx.beans.property.ReadOnlyObjectWrapper;
 import javafx.fxml.FXML;
 import javafx.scene.control.*;
+import javafx.scene.layout.GridPane;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -55,6 +56,46 @@ public class RecordController {
         categoryBox.getSelectionModel().selectFirst();
     }
 
+    /** 新建分类：名称(必填) + emoji(可选)，类型跟随当前“支出/收入”切换。 */
+    @FXML
+    public void onAddCategory() {
+        TextField nameField = new TextField();
+        nameField.setPromptText("分类名称，如：宠物");
+        TextField iconField = new TextField();
+        iconField.setPromptText("图标 emoji（可留空），如：🐱");
+
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(10);
+        grid.addRow(0, new Label("名称"), nameField);
+        grid.addRow(1, new Label("图标"), iconField);
+
+        Dialog<ButtonType> dlg = new Dialog<>();
+        dlg.setTitle("新建分类");
+        dlg.setHeaderText(rbIncome.isSelected() ? "新增收入分类" : "新增支出分类");
+        dlg.getDialogPane().setContent(grid);
+        dlg.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        dlg.showAndWait().ifPresent(bt -> {
+            if (bt != ButtonType.OK) return;
+            String name = nameField.getText() == null ? "" : nameField.getText().trim();
+            if (name.isEmpty()) {
+                warn("请输入分类名称");
+                return;
+            }
+            Category c = new Category();
+            c.clientId = UUID.randomUUID().toString();
+            c.name = name;
+            c.icon = iconField.getText() == null ? "" : iconField.getText().trim();
+            c.type = rbIncome.isSelected() ? "INCOME" : "EXPENSE";
+            c.lastModified = System.currentTimeMillis();
+            c.deleted = false;
+            db.upsertCategory(c);
+            loadCategories(rbIncome.isSelected());
+            if (categoryBox.getItems().contains(name)) categoryBox.getSelectionModel().select(name);
+            info("已新增分类：" + name);
+        });
+    }
+
     @FXML
     public void onSave() {
         if (amountField.getText() == null || amountField.getText().isBlank()) {
@@ -71,7 +112,8 @@ public class RecordController {
 
         String catName = categoryBox.getValue();
         String accName = accountBox.getValue();
-        Category cat = db.listCategories("EXPENSE").stream().filter(c -> c.name.equals(catName)).findFirst().orElse(null);
+        String type = rbIncome.isSelected() ? "INCOME" : "EXPENSE";
+        Category cat = db.listCategories(type).stream().filter(c -> c.name.equals(catName)).findFirst().orElse(null);
         Account acc = db.listAccounts().stream().filter(a -> a.name.equals(accName)).findFirst().orElse(null);
 
         Transaction t = new Transaction();

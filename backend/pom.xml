@@ -13,7 +13,7 @@
 
     <groupId>com.personal.accounting</groupId>
     <artifactId>accounting-backend</artifactId>
-    <version>0.1.0</version>
+    <version>1.0.1</version>
     <name>accounting-backend</name>
     <description>Cloud sync and storage service for Personal-Accounting-App</description>
 

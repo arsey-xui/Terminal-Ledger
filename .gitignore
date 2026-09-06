@@ -87,6 +87,9 @@ desktop/app.ico
 outputs/portable3/
 outputs/apk/
 outputs/TerminalLedger/
+outputs/*.zip
+outputs/*.exe
+outputs/*.apk
 
 # ---------- 本机 Maven 镜像/插件组配置（含本机路径，勿提交） ----------
 maven-settings-local.xml

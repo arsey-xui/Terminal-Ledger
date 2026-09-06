@@ -145,13 +145,20 @@ public class ReportFragment extends Fragment {
         chart.setData(data);
         chart.getXAxis().setValueFormatter(new IndexAxisValueFormatter(labels));
         chart.getXAxis().setPosition(XAxis.XAxisPosition.BOTTOM);
-        chart.getXAxis().setLabelCount(6);
+        chart.getXAxis().setLabelCount(8);
         chart.getXAxis().setGranularity(1f);
+        chart.getXAxis().setTextColor(Color.parseColor("#8C8C8C"));
         chart.getDescription().setEnabled(false);
         chart.getAxisRight().setEnabled(false);
         chart.getAxisLeft().setAxisMinimum(0);
         chart.getAxisLeft().setTextColor(Color.parseColor("#8C8C8C"));
-        chart.getXAxis().setTextColor(Color.parseColor("#8C8C8C"));
+        // 横纵坐标显示具体数值：Y 轴把金额数值格式化，X 轴显示对应日期和金额
+        chart.getAxisLeft().setValueFormatter(new ValueFormatter() {
+            @Override
+            public String getFormattedValue(float value) {
+                return String.format("%.0f", value);
+            }
+        });
         chart.getLegend().setTextColor(Color.parseColor("#6B6B6B"));
         chart.invalidate();
     }
