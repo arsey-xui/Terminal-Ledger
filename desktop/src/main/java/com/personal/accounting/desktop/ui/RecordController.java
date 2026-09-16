@@ -96,6 +96,58 @@ public class RecordController {
         });
     }
 
+    /**
+     * 删除分类（软删除，可同步）。分类下的历史流水**不会被删除**，
+     * 只是这些流水会显示为"未分类"；删除前会提示影响条数。
+     */
+    @FXML
+    public void onDeleteCategory() {
+        boolean income = rbIncome.isSelected();
+        var cats = db.listCategories(income ? "INCOME" : "EXPENSE");
+        if (cats.isEmpty()) {
+            warn(income ? "还没有收入分类可删除" : "还没有支出分类可删除");
+            return;
+        }
+        String[] names = cats.stream()
+                .map(c -> (c.icon == null || c.icon.isBlank() ? "" : c.icon + " ") + c.name)
+                .toArray(String[]::new);
+
+        ChoiceDialog<String> pick = new ChoiceDialog<>(names[0], names);
+        pick.setTitle("删除分类");
+        pick.setHeaderText(income ? "选择要删除的收入分类" : "选择要删除的支出分类");
+        pick.setContentText("分类");
+        var chosen = pick.showAndWait();
+        if (chosen.isEmpty()) return;
+
+        int index = 0;
+        for (int i = 0; i < names.length; i++) {
+            if (names[i].equals(chosen.get())) { index = i; break; }
+        }
+        Category target = cats.get(index);
+        int affected = db.countTransactionsByCategory(target.clientId);
+
+        String message = "确定删除分类「" + target.name + "」？\n"
+                + (affected > 0
+                ? "该分类下有 " + affected + " 条流水，这些流水会保留、但显示为「未分类」。"
+                : "该分类下暂无流水。");
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION, message, ButtonType.OK, ButtonType.CANCEL);
+        confirm.setTitle("删除确认");
+        confirm.setHeaderText(null);
+        if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) return;
+
+        db.deleteCategory(target.clientId);
+        loadCategories(income);
+        loadTransactions();
+        new Thread(() -> {
+            try {
+                new SyncManager(db).sync();
+            } catch (Exception ignore) {
+                // 离线时静默失败，下次同步会补上
+            }
+        }).start();
+        info("已删除分类：" + target.name + (affected > 0 ? "（" + affected + " 条流水保留，显示为未分类）" : ""));
+    }
+
     @FXML
     public void onSave() {
         if (amountField.getText() == null || amountField.getText().isBlank()) {

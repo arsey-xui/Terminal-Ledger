@@ -42,12 +42,22 @@ public class AiReportServiceImpl implements AiReportService {
         String model = firstNonBlank(request.getModel(), props.getModel());
 
         String report;
+        String engine;
         if (wantsLlm && apiKey != null && !apiKey.isBlank()) {
-            report = generateWithLlm(year, month, apiKey, baseUrl, model);
+            // 大模型失败时返回 null，据此回退并用真正生效的引擎标注
+            String llmReport = generateWithLlm(year, month, apiKey, baseUrl, model);
+            if (llmReport != null) {
+                report = llmReport;
+                engine = "LLM";
+            } else {
+                report = generateWithRules(year, month);
+                engine = "RULE";
+            }
         } else {
             report = generateWithRules(year, month);
+            engine = "RULE";
         }
-        return new AiReportResponse(report, wantsLlm ? "LLM" : "RULE", System.currentTimeMillis());
+        return new AiReportResponse(report, engine, System.currentTimeMillis());
     }
 
     private static String firstNonBlank(String a, String b) {
@@ -94,7 +104,7 @@ public class AiReportServiceImpl implements AiReportService {
         return sb.toString();
     }
 
-    /** 大模型增强：把报表数据拼成上下文后调用占位接口。失败回退规则引擎。 */
+    /** 大模型增强：把报表数据拼成上下文后调用占位接口。失败返回 null，由调用方回退规则引擎。 */
     private String generateWithLlm(int year, int month, String apiKey, String baseUrl, String model) {
         try {
             String data = buildContext(year, month);
@@ -102,7 +112,7 @@ public class AiReportServiceImpl implements AiReportService {
                     "你是一位个人理财助手，请基于下面的结构化消费数据，用中文写一段简洁、可执行的消费分析（不超过 150 字）。",
                     data, apiKey, baseUrl, model);
         } catch (Exception e) {
-            return generateWithRules(year, month);
+            return null;
         }
     }
 

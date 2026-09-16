@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="识别到的金额"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp" />
+        <EditText
+            android:id="@+id/bill_amount"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:inputType="numberDecimal"
+            android:textSize="26sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="备注（商户）"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp" />
+        <EditText
+            android:id="@+id/bill_note"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:hint="可留空"
+            android:inputType="text" />
+
+        <Button
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:id="@+id/bill_pick_category"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="分类：请选择"
+            android:textAllCaps="false"
+            android:textColor="@color/text_primary"
+            app:cornerRadius="0dp"
+            app:strokeColor="@color/accent" />
+
+        <Button
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:id="@+id/bill_pick_account"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="账户：请选择"
+            android:textAllCaps="false"
+            android:textColor="@color/text_primary"
+            app:cornerRadius="0dp"
+            app:strokeColor="@color/accent" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="识别到的原始文字（可核对）"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp" />
+        <TextView
+            android:id="@+id/bill_raw_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp" />
+    </LinearLayout>
+</ScrollView>

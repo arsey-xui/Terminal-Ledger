@@ -30,6 +30,35 @@ public class ApiClient {
                 .url(url)
                 .post(RequestBody.create(gson.toJson(body), JSON))
                 .build();
+        return execute(request, responseClass);
+    }
+
+    /** GET 请求（同样解包后端统一响应里的 data）。 */
+    public <T> T get(String path, Class<T> responseClass) throws IOException {
+        String url = SyncConfig.BASE_URL + path;
+        Request request = new Request.Builder()
+                .url(url)
+                .get()
+                .build();
+        return execute(request, responseClass);
+    }
+
+    /** 请求完整地址（例如 GitHub Releases API），不做 baseUrl 拼接、也不解包 data。 */
+    public <T> T getAbsolute(String url, Class<T> responseClass) throws IOException {
+        Request request = new Request.Builder()
+                .url(url)
+                .get()
+                .build();
+        try (Response resp = client.newCall(request).execute()) {
+            String bodyStr = resp.body() == null ? "" : resp.body().string();
+            if (!resp.isSuccessful()) {
+                throw new IOException("HTTP " + resp.code() + ": " + bodyStr);
+            }
+            return gson.fromJson(bodyStr, responseClass);
+        }
+    }
+
+    private <T> T execute(Request request, Class<T> responseClass) throws IOException {
         try (Response resp = client.newCall(request).execute()) {
             String bodyStr = resp.body().string();
             if (!resp.isSuccessful()) {

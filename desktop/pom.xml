@@ -6,7 +6,7 @@
 
     <groupId>com.personal.accounting</groupId>
     <artifactId>accounting-desktop</artifactId>
-    <version>1.0.1</version>
+    <version>1.1.0</version>
     <name>accounting-desktop</name>
     <description>JavaFX desktop client for Personal-Accounting-App</description>
 
@@ -74,9 +74,13 @@
                             <createDependencyReducedPom>false</createDependencyReducedPom>
                             <shadedArtifactAttached>false</shadedArtifactAttached>
                             <transformers>
-                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>com.personal.accounting.desktop.DesktopLauncher</mainClass>
-                                </transformer>
+                            <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                <mainClass>com.personal.accounting.desktop.DesktopLauncher</mainClass>
+                                <!-- 写入版本号：从 IDE/直接跑 jar 时也能读到正确版本（app-image 用 jpackage.app-version） -->
+                                <manifestEntries>
+                                    <Implementation-Version>${project.version}</Implementation-Version>
+                                </manifestEntries>
+                            </transformer>
                             </transformers>
                             <filters>
                                 <filter>

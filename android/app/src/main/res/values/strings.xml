@@ -6,7 +6,7 @@
     <string name="nav_settings">设置</string>
     <string name="quick_record_title">快速记账</string>
     <string name="save">保存</string>
-    <string name="voice">语音</string>
+    <string name="voice">语音输入</string>
     <string name="amount_hint">金额</string>
     <string name="note_hint">备注（选填）</string>
 </resources>

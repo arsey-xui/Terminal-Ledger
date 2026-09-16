@@ -50,8 +50,8 @@ public class QuickAddWidgetActivity extends Activity {
 
         findViewById(R.id.btn_save).setOnClickListener(this::save);
         findViewById(R.id.btn_voice).setOnClickListener(v -> {
-            // 复用 VoiceRecognitionHelper.start(...)，此处为保持示例精简直接给出提示
-            Toast.makeText(this, "已请求语音识别（配合 RECORD_AUDIO 权限）", Toast.LENGTH_SHORT).show();
+            // 与记账页一致：不自研语音识别，改用输入法麦克风把语音转成文字
+            Toast.makeText(this, "请用输入法键盘上的麦克风说话，文字会自动填入", Toast.LENGTH_LONG).show();
         });
     }
 

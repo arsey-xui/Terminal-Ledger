@@ -23,6 +23,19 @@ public class ApiClient {
                 .url(SyncConfig.BASE_URL + path)
                 .post(RequestBody.create(Json.MAPPER.writeValueAsString(body), JSON))
                 .build();
+        return execute(req, cls);
+    }
+
+    /** GET 请求（例如查版本号），同样解包后端统一响应里的 data。 */
+    public <T> T get(String path, Class<T> cls) throws IOException {
+        Request req = new Request.Builder()
+                .url(SyncConfig.BASE_URL + path)
+                .get()
+                .build();
+        return execute(req, cls);
+    }
+
+    private <T> T execute(Request req, Class<T> cls) throws IOException {
         try (Response resp = client.newCall(req).execute()) {
             String s = resp.body().string();
             if (!resp.isSuccessful()) {

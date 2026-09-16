@@ -76,6 +76,12 @@ public class BudgetRepo {
         return list;
     }
 
+    /** 清空全部预算上限（软删除），回到初次安装时「所有分类都未设置上限」的状态。 */
+    public void resetToDefaults() {
+        rw().execSQL("UPDATE budget SET deleted=1, last_modified=? WHERE deleted=0",
+                new Object[]{System.currentTimeMillis()});
+    }
+
     private ContentValues toValues(Budget x) {
         ContentValues v = new ContentValues();
         v.put("client_id", x.clientId);

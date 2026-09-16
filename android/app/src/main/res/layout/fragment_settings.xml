@@ -80,6 +80,42 @@
             app:cornerRadius="0dp"
             app:strokeColor="@color/accent" />
 
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:orientation="horizontal">
+            <Button
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:id="@+id/btn_reset_category"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="重置分类"
+                android:textColor="@color/text_primary"
+                app:cornerRadius="0dp"
+                app:strokeColor="@color/accent" />
+            <Button
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:id="@+id/btn_reset_account"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="重置账户"
+                android:textColor="@color/text_primary"
+                app:cornerRadius="0dp"
+                app:strokeColor="@color/accent" />
+        </LinearLayout>
+        <Button
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:id="@+id/btn_reset_budget"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="重置预算管理（清空所有上限）"
+            android:textColor="@color/text_primary"
+            app:cornerRadius="0dp"
+            app:strokeColor="@color/accent" />
+
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -98,14 +134,46 @@
             android:textColor="@color/text_primary"
             app:cornerRadius="0dp"
             app:strokeColor="@color/accent" />
-        <Button
-            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-            android:id="@+id/btn_message_voice"
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="版本"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            android:fontFamily="monospace"
+            android:textStyle="bold" />
+        <TextView
+            android:id="@+id/version_view"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="当前版本：-"
+            android:textColor="@color/text_primary"
+            android:fontFamily="monospace" />
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="AI 消费分析"
-            android:textColor="@color/text_primary"
-            app:cornerRadius="0dp"
-            app:strokeColor="@color/accent" />
+            android:orientation="horizontal">
+            <Button
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:id="@+id/btn_check_update"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="检查更新"
+                android:textColor="@color/text_primary"
+                app:cornerRadius="0dp"
+                app:strokeColor="@color/accent" />
+            <Button
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:id="@+id/btn_update_source"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="更新源"
+                android:textColor="@color/text_primary"
+                app:cornerRadius="0dp"
+                app:strokeColor="@color/accent" />
+        </LinearLayout>
     </LinearLayout>
 </ScrollView>

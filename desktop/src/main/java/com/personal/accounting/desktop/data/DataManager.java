@@ -50,29 +50,79 @@ public class DataManager implements AutoCloseable {
     /** 首次使用写入内置默认分类/账户（与移动端相同的 clientId，保证跨端一致、不产生重复）。 */
     private void seedDefaults() throws Exception {
         if (isEmpty("category")) {
-            seedCategory("cat-food", "餐饮", "🍜", "EXPENSE");
-            seedCategory("cat-traffic", "交通", "🚌", "EXPENSE");
-            seedCategory("cat-shopping", "购物", "🛍️", "EXPENSE");
-            seedCategory("cat-housing", "住房", "🏠", "EXPENSE");
-            seedCategory("cat-comms", "通讯", "📱", "EXPENSE");
-            seedCategory("cat-medical", "医疗", "💊", "EXPENSE");
-            seedCategory("cat-edu", "教育", "📚", "EXPENSE");
-            seedCategory("cat-ent", "娱乐", "🎮", "EXPENSE");
-            seedCategory("cat-gift", "人情", "🎁", "EXPENSE");
-            seedCategory("cat-other", "其他", "📦", "EXPENSE");
+            insertDefaultExpenseCategories();
         }
         if (!hasType("INCOME")) {
-            seedCategory("cat-salary", "工资", "💼", "INCOME");
-            seedCategory("cat-side", "副业", "🧾", "INCOME");
-            seedCategory("cat-redpacket", "红包", "🧧", "INCOME");
-            seedCategory("cat-other-income", "其他收入", "💰", "INCOME");
+            insertDefaultIncomeCategories();
         }
         if (isEmpty("accounts")) {
-            seedAccount("acc-cash", "现金", "CASH", "💵");
-            seedAccount("acc-savings", "储蓄卡", "DEBIT_CARD", "🏦");
-            seedAccount("acc-credit", "信用卡", "CREDIT_CARD", "💳");
-            seedAccount("acc-wechat", "微信", "WECHAT", "💚");
-            seedAccount("acc-alipay", "支付宝", "ALIPAY", "💙");
+            insertDefaultAccounts();
+        }
+    }
+
+    /** 内置默认支出分类（与手机端 clientId 一致）。 */
+    private void insertDefaultExpenseCategories() throws Exception {
+        seedCategory("cat-food", "餐饮", "🍜", "EXPENSE");
+        seedCategory("cat-traffic", "交通", "🚌", "EXPENSE");
+        seedCategory("cat-shopping", "购物", "🛍️", "EXPENSE");
+        seedCategory("cat-housing", "住房", "🏠", "EXPENSE");
+        seedCategory("cat-comms", "通讯", "📱", "EXPENSE");
+        seedCategory("cat-medical", "医疗", "💊", "EXPENSE");
+        seedCategory("cat-edu", "教育", "📚", "EXPENSE");
+        seedCategory("cat-ent", "娱乐", "🎮", "EXPENSE");
+        seedCategory("cat-gift", "人情", "🎁", "EXPENSE");
+        seedCategory("cat-other", "其他", "📦", "EXPENSE");
+    }
+
+    /** 内置默认收入分类。 */
+    private void insertDefaultIncomeCategories() throws Exception {
+        seedCategory("cat-salary", "工资", "💼", "INCOME");
+        seedCategory("cat-side", "副业", "🧾", "INCOME");
+        seedCategory("cat-redpacket", "红包", "🧧", "INCOME");
+        seedCategory("cat-other-income", "其他收入", "💰", "INCOME");
+    }
+
+    /** 内置默认账户。 */
+    private void insertDefaultAccounts() throws Exception {
+        seedAccount("acc-cash", "现金", "CASH", "💵");
+        seedAccount("acc-savings", "储蓄卡", "DEBIT_CARD", "🏦");
+        seedAccount("acc-credit", "信用卡", "CREDIT_CARD", "💳");
+        seedAccount("acc-wechat", "微信", "WECHAT", "💚");
+        seedAccount("acc-alipay", "支付宝", "ALIPAY", "💙");
+    }
+
+    /**
+     * 重置分类为初次安装状态：软删除全部分类（含自建），再恢复内置默认分类。
+     * 只影响分类表，流水记录保持不动（历史流水会显示为"未分类"）。
+     */
+    public void resetCategories() throws Exception {
+        long now = System.currentTimeMillis();
+        try (PreparedStatement ps = conn.prepareStatement(
+                "UPDATE category SET deleted=1, last_modified=? WHERE deleted=0")) {
+            ps.setLong(1, now);
+            ps.executeUpdate();
+        }
+        insertDefaultExpenseCategories();
+        insertDefaultIncomeCategories();
+    }
+
+    /** 重置账户为初次安装状态：软删除全部账户（含自建），再恢复内置默认账户。流水不动。 */
+    public void resetAccounts() throws Exception {
+        long now = System.currentTimeMillis();
+        try (PreparedStatement ps = conn.prepareStatement(
+                "UPDATE accounts SET deleted=1, last_modified=? WHERE deleted=0")) {
+            ps.setLong(1, now);
+            ps.executeUpdate();
+        }
+        insertDefaultAccounts();
+    }
+
+    /** 清空全部预算上限，回到"所有分类都未设置上限"的状态。 */
+    public void resetBudgets() throws Exception {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "UPDATE budget SET deleted=1, last_modified=? WHERE deleted=0")) {
+            ps.setLong(1, System.currentTimeMillis());
+            ps.executeUpdate();
         }
     }
 
@@ -96,8 +146,10 @@ public class DataManager implements AutoCloseable {
 
     private void seedCategory(String id, String name, String icon, String type) throws Exception {
         long now = System.currentTimeMillis();
+        // 用 MERGE：重置时这些 clientId 可能已存在（被软删除的墓碑），INSERT 会主键冲突；
+        // last_modified 刷新为当前时间，删除动作才能在 LWW 同步里被覆盖。
         try (PreparedStatement ps = conn.prepareStatement(
-                "INSERT INTO category (client_id,name,type,icon,sort_order,last_modified,deleted,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)")) {
+                "MERGE INTO category (client_id,name,type,icon,sort_order,last_modified,deleted,created_at,updated_at) KEY(client_id) VALUES(?,?,?,?,?,?,?,?,?)")) {
             ps.setString(1, id);
             ps.setString(2, name);
             ps.setString(3, type);
@@ -113,8 +165,9 @@ public class DataManager implements AutoCloseable {
 
     private void seedAccount(String id, String name, String type, String icon) throws Exception {
         long now = System.currentTimeMillis();
+        // 同 seedCategory：重置时可能已存在墓碑行，用 MERGE 覆盖并把 deleted 置 0
         try (PreparedStatement ps = conn.prepareStatement(
-                "INSERT INTO accounts (client_id,name,type,icon,initial_balance,sort_order,last_modified,deleted,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)")) {
+                "MERGE INTO accounts (client_id,name,type,icon,initial_balance,sort_order,last_modified,deleted,created_at,updated_at) KEY(client_id) VALUES(?,?,?,?,?,?,?,?,?,?)")) {
             ps.setString(1, id);
             ps.setString(2, name);
             ps.setString(3, type);
@@ -211,6 +264,28 @@ public class DataManager implements AutoCloseable {
             ps.setString(1, clientId);
             try (ResultSet rs = ps.executeQuery()) {
                 return rs.next() ? category(rs) : null;
+            }
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /** 软删除分类：置 deleted=1 并刷新 last_modified，保证删除能被同步。 */
+    public void deleteCategory(String clientId) {
+        Category c = findCategory(clientId);
+        if (c == null) return;
+        c.deleted = true;
+        c.lastModified = System.currentTimeMillis();
+        upsertCategory(c);
+    }
+
+    /** 该分类下未删除的流水条数，用于删除前提示影响范围。 */
+    public int countTransactionsByCategory(String categoryClientId) {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT COUNT(*) FROM transaction_record WHERE deleted=0 AND category_client_id=?")) {
+            ps.setString(1, categoryClientId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt(1) : 0;
             }
         } catch (Exception e) {
             throw new RuntimeException(e);

@@ -13,6 +13,7 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.appcompat.app.AlertDialog;
 import androidx.fragment.app.Fragment;
 
 import com.personal.accounting.android.R;
@@ -51,7 +52,22 @@ public class BudgetFragment extends Fragment {
         txRepo = new TransactionRepo(requireContext());
         budgetRepo = new BudgetRepo(requireContext());
         monthTitle.setText(year + "年" + month + "月 · 预算管理");
+        v.findViewById(R.id.btn_reset_budget).setOnClickListener(x -> confirmReset());
         return v;
+    }
+
+    private void confirmReset() {
+        new AlertDialog.Builder(requireContext())
+                .setTitle("重置预算管理？")
+                .setMessage("会清空所有分类的预算上限，回到「未设置上限」的状态；流水记录不会被删除。\n\n"
+                        + "此操作影响本地数据，并会在下次同步时同步到云端。")
+                .setPositiveButton("重置", (d, w) -> {
+                    budgetRepo.resetToDefaults();
+                    rebuildRows();
+                    Toast.makeText(requireContext(), "预算已清空", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("取消", null)
+                .show();
     }
 
     @Override

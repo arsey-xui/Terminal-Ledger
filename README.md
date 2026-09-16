@@ -9,7 +9,7 @@
 - **离线优先**：手机端（SQLite）与电脑端（H2）各自维护全量本地数据，断网时所有操作照常进行。
 - **云端同步**：有网络时自动做**增量同步**，基于 `last_modified` 时间戳，采用 **最后写入胜出（LWW, Last-Write-Wins）** 合并策略，冲突无需人工选择。
 - **C 级报表**：流水记录、分类下钻、近 30 天趋势、环比对比、预算进度条、年度日历热力图。
-- **高级亮点**：语音快捷记账、Android 桌面小组件、报表层 AI 消费分析（内置规则引擎兜底；首次使用可选填自己的 API Key 走大模型）。
+- **高级亮点**：截图记账（手机端端上离线 OCR，自动读金额+商户）、报表层 AI 消费分析（内置规则引擎兜底，可选填自己的 API Key 走大模型）、应用内检查更新（直连 GitHub Releases）、Android 桌面小组件、输入法语音 + 文本解析记账。
 - **数据安全**：CSV 导出、加密 `.zip` 完整备份包一键导入导出、账单照片上传。
 
 ---
@@ -98,7 +98,7 @@ docker compose up -d      # 起 MySQL + 后端
 
 ### 3. 电脑端（JavaFX）
 
-**直接运行便携版（推荐）**：双击 `outputs\portable3\TerminalLedger\TerminalLedger.exe`（免安装、自带运行环境）。
+**直接运行便携版（推荐）**：双击 `outputs\TerminalLedger\TerminalLedger.exe`（免安装、自带运行环境；也可解压 `outputs\TerminalLedger-Desktop-<version>.zip` 后运行同名 exe）。
 
 **或用源码运行**：
 
@@ -169,6 +169,7 @@ mysql -u root -p < sql/init.sql
 - [docs/API.md](docs/API.md) — REST API
 - [docs/AI-ANALYSIS.md](docs/AI-ANALYSIS.md) — AI 消费分析接口
 - [docs/VOICE-AND-WIDGET.md](docs/VOICE-AND-WIDGET.md) — 语音记账与小组件
+- [docs/RELEASE-NOTES-v1.1.0.md](docs/RELEASE-NOTES-v1.1.0.md) — 当前版本（v1.1.0）更新说明
 - [docs/BUILD-AND-RELEASE.md](docs/BUILD-AND-RELEASE.md) — 桌面包 / Android APK / Docker 一键出包
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 整体架构
 - [docs/UI-SPEC.md](docs/UI-SPEC.md) — 多端 UI 布局

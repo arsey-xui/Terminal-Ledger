@@ -38,6 +38,19 @@ public class CategoryRepo {
         return list;
     }
 
+    /**
+     * 所有未删除分类，支出整体排在收入之前；组内沿用 sort_order，同序时按写入先后（rowid）排列。
+     * 用于「管理分类」列表，保证（支出）分类都在（收入）分类上方。
+     */
+    public List<Category> allExpenseFirst() {
+        List<Category> list = new ArrayList<>();
+        try (Cursor c = rw().query("category", null, "deleted=0", null, null, null,
+                "CASE type WHEN 'EXPENSE' THEN 0 ELSE 1 END ASC, sort_order ASC, rowid ASC")) {
+            while (c.moveToNext()) list.add(fromCursor(c));
+        }
+        return list;
+    }
+
     private List<Category> list(String type) {
         List<Category> list = new ArrayList<>();
         try (Cursor c = rw().query("category", null, "deleted=0 AND type=?", new String[]{type},
@@ -86,6 +99,17 @@ public class CategoryRepo {
         c.deleted = true;
         c.lastModified = System.currentTimeMillis();
         upsertLww(c);
+    }
+
+    /**
+     * 重置为初次安装状态：软删除全部分类（含用户自建），再恢复内置默认分类。
+     * 只影响分类表，流水记录保持不动。
+     */
+    public void resetToDefaults() {
+        long now = System.currentTimeMillis();
+        rw().execSQL("UPDATE category SET deleted=1, last_modified=? WHERE deleted=0",
+                new Object[]{now});
+        helper.restoreDefaults();
     }
 
     private ContentValues toValues(Category x) {

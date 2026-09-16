@@ -61,6 +61,17 @@ public class AccountRepo {
         upsertLww(a);
     }
 
+    /**
+     * 重置为初次安装状态：软删除全部账户（含用户自建），再恢复内置默认账户。
+     * 只影响账户表，流水记录保持不动。
+     */
+    public void resetToDefaults() {
+        long now = System.currentTimeMillis();
+        rw().execSQL("UPDATE accounts SET deleted=1, last_modified=? WHERE deleted=0",
+                new Object[]{now});
+        helper.restoreDefaults();
+    }
+
     private ContentValues toValues(Account x) {
         ContentValues v = new ContentValues();
         v.put("client_id", x.clientId);

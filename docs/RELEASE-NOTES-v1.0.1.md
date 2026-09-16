@@ -17,9 +17,9 @@
 ## 产物
 | 平台 | 文件 | 说明 |
 | --- | --- | --- |
-| 电脑端 | `TerminalLedger-Desktop-v1.0.1.zip` | 免安装、自带运行环境，解压后双击 `TerminalLedger\TerminalLedger.exe` |
-| 手机端 | `TerminalLedger-v1.0.1.apk` | 传到手机安装，允许“未知来源应用” |
-| 手机端 | `TerminalLedger-v1.0.1.zip` | 含 APK，便于分发 |
+| 电脑端 | `TerminalLedger-Desktop-1.0.1.zip` | 免安装、自带运行环境，解压后双击 `TerminalLedger\TerminalLedger.exe` |
+| 手机端 | `TerminalLedger-1.0.1-arm64-v8a.apk` | 传到手机安装，允许“未知来源应用” |
+| 手机端 | `TerminalLedger-1.0.1.zip` | 含 APK，便于分发 |
 
 > 手机端 APK：`.\scripts\build-android-release.ps1`；电脑端：`.\scripts\build-desktop-installer.ps1`。详见 `README.md` / `docs/INSTALL.md`。
 

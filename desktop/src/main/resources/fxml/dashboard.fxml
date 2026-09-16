@@ -42,7 +42,7 @@
                         </StackPane>
                     </VBox>
                     <VBox styleClass="panel">
-                        <Label text="近30天每日净支出" styleClass="h2"/>
+                        <Label text="近30天每日支出" styleClass="h2"/>
                         <StackPane>
                             <LineChart fx:id="line" prefHeight="220">
                                 <xAxis>

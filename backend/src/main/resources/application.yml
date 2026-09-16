@@ -37,6 +37,24 @@ accounting:
     api-key: ${AI_API_KEY:}
     model: ${AI_MODEL:gpt-4o-mini}
     base-url: ${AI_BASE_URL:https://api.openai.com/v1}
+  version:
+    # 版本发布信息：手机端「设置 → 检查更新」读取这里
+    latest: ${APP_LATEST_VERSION:1.1.0}
+    min-supported: ${APP_MIN_SUPPORTED_VERSION:1.0.0}
+    # 发布时填入安装包地址（例如 GitHub Releases 的 apk 链接）
+    download-url: ${APP_DOWNLOAD_URL:}
+    notes: ${APP_RELEASE_NOTES:}
+    released-at: ${APP_RELEASED_AT:0}
+    # GitHub Releases 自动获取：填了 github-repo 就优先查 GitHub（官方 API），
+    # 发版只需在 GitHub 创建 Release 并上传产物，不用改这里的配置
+    github-repo: ${APP_GITHUB_REPO:}
+    # 私有仓库或想提高速率限制时填 Token（公开仓库可留空）
+    github-token: ${APP_GITHUB_TOKEN:}
+    # 资产名匹配规则：apk 按架构片段、桌面端 zip 按 Desktop 字样，匹配到就自动生成下载地址
+    apk-asset-pattern: ${APP_APK_ASSET_PATTERN:arm64-v8a}
+    desktop-asset-pattern: ${APP_DESKTOP_ASSET_PATTERN:Desktop}
+    # GitHub 结果缓存秒数（未鉴权 API 限制 60 次/小时，缓存可避免被客户端打爆）
+    cache-seconds: ${APP_VERSION_CACHE_SECONDS:300}
 
 logging:
   level:

@@ -68,30 +68,56 @@ public class DatabaseHelper extends SQLiteOpenHelper {
      */
     private void seedDefaults(SQLiteDatabase db) {
         if (isEmpty(db, "category")) {
-            insertCategory(db, "cat-food",       "餐饮", "🍜", "EXPENSE");
-            insertCategory(db, "cat-traffic",    "交通", "🚌", "EXPENSE");
-            insertCategory(db, "cat-shopping",   "购物", "🛍️", "EXPENSE");
-            insertCategory(db, "cat-housing",    "住房", "🏠", "EXPENSE");
-            insertCategory(db, "cat-comms",      "通讯", "📱", "EXPENSE");
-            insertCategory(db, "cat-medical",    "医疗", "💊", "EXPENSE");
-            insertCategory(db, "cat-edu",        "教育", "📚", "EXPENSE");
-            insertCategory(db, "cat-ent",        "娱乐", "🎮", "EXPENSE");
-            insertCategory(db, "cat-gift",       "人情", "🎁", "EXPENSE");
-            insertCategory(db, "cat-other",      "其他", "📦", "EXPENSE");
+            insertDefaultExpenseCategories(db);
         }
         if (!hasType(db, "category", "INCOME")) {
-            insertCategory(db, "cat-salary",      "工资",     "💼", "INCOME");
-            insertCategory(db, "cat-side",        "副业",     "🧾", "INCOME");
-            insertCategory(db, "cat-redpacket",   "红包",     "🧧", "INCOME");
-            insertCategory(db, "cat-other-income","其他收入", "💰", "INCOME");
+            insertDefaultIncomeCategories(db);
         }
         if (isEmpty(db, "accounts")) {
-            insertAccount(db, "acc-cash",    "现金",   "CASH",       "💵");
-            insertAccount(db, "acc-savings", "储蓄卡", "DEBIT_CARD", "🏦");
-            insertAccount(db, "acc-credit",  "信用卡", "CREDIT_CARD","💳");
-            insertAccount(db, "acc-wechat",  "微信",   "WECHAT",     "💚");
-            insertAccount(db, "acc-alipay",  "支付宝", "ALIPAY",     "💙");
+            insertDefaultAccounts(db);
         }
+    }
+
+    /**
+     * 恢复内置默认分类与账户（不重置任何流水/预算）。
+     * 供「管理分类 / 管理账户」的重置按钮使用：软删除项已被移出 UI，
+     * 这里按固定 clientId 重新写入并把 deleted 置 0、last_modified 刷新为当前时间，
+     * 因此在 LWW 同步里恢复动作会胜过其它设备上的旧删除墓碑。
+     * 可在任意状态下重复调用（幂等）。
+     */
+    public void restoreDefaults() {
+        SQLiteDatabase db = getWritableDatabase();
+        insertDefaultExpenseCategories(db);
+        insertDefaultIncomeCategories(db);
+        insertDefaultAccounts(db);
+    }
+
+    private void insertDefaultExpenseCategories(SQLiteDatabase db) {
+        insertCategory(db, "cat-food",       "餐饮", "🍜", "EXPENSE");
+        insertCategory(db, "cat-traffic",    "交通", "🚌", "EXPENSE");
+        insertCategory(db, "cat-shopping",   "购物", "🛍️", "EXPENSE");
+        insertCategory(db, "cat-housing",    "住房", "🏠", "EXPENSE");
+        insertCategory(db, "cat-comms",      "通讯", "📱", "EXPENSE");
+        insertCategory(db, "cat-medical",    "医疗", "💊", "EXPENSE");
+        insertCategory(db, "cat-edu",        "教育", "📚", "EXPENSE");
+        insertCategory(db, "cat-ent",        "娱乐", "🎮", "EXPENSE");
+        insertCategory(db, "cat-gift",       "人情", "🎁", "EXPENSE");
+        insertCategory(db, "cat-other",      "其他", "📦", "EXPENSE");
+    }
+
+    private void insertDefaultIncomeCategories(SQLiteDatabase db) {
+        insertCategory(db, "cat-salary",      "工资",     "💼", "INCOME");
+        insertCategory(db, "cat-side",        "副业",     "🧾", "INCOME");
+        insertCategory(db, "cat-redpacket",   "红包",     "🧧", "INCOME");
+        insertCategory(db, "cat-other-income","其他收入", "💰", "INCOME");
+    }
+
+    private void insertDefaultAccounts(SQLiteDatabase db) {
+        insertAccount(db, "acc-cash",    "现金",   "CASH",       "💵");
+        insertAccount(db, "acc-savings", "储蓄卡", "DEBIT_CARD", "🏦");
+        insertAccount(db, "acc-credit",  "信用卡", "CREDIT_CARD","💳");
+        insertAccount(db, "acc-wechat",  "微信",   "WECHAT",     "💚");
+        insertAccount(db, "acc-alipay",  "支付宝", "ALIPAY",     "💙");
     }
 
     private void insertCategory(SQLiteDatabase db, String id, String name, String icon, String type) {

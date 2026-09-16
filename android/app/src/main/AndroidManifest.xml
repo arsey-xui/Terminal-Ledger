@@ -4,14 +4,8 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
-
-    <!-- 语音识别服务查询（Android 11+ 需要） -->
-    <queries>
-        <intent>
-            <action android:name="android.speech.RecognitionService" />
-        </intent>
-    </queries>
+    <!-- 更新时下载安装包并调起系统安装界面（Android 8.0+ 还需用户在系统设置里允许本应用安装未知应用） -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:allowBackup="true"
@@ -48,5 +42,16 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/quick_add_widget_info" />
         </receiver>
+
+        <!-- 向系统安装界面提供下载好的 apk（file:// 在 Android 7+ 会抛 FileUriExposedException） -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 </manifest>

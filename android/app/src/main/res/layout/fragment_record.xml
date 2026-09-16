@@ -89,6 +89,16 @@
                 app:cornerRadius="0dp"
                 app:strokeColor="@color/accent" />
             <Button
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:id="@+id/btn_screenshot"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="截图记账"
+                android:textColor="@color/text_primary"
+                app:cornerRadius="0dp"
+                app:strokeColor="@color/accent" />
+            <Button
                 android:id="@+id/btn_save"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"

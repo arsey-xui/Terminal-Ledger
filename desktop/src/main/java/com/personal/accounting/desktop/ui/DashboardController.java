@@ -49,12 +49,13 @@ public class DashboardController {
     @FXML
     public void initialize() {
         pie.setTitle("支出构成");
-        line.setTitle("近30天每日净支出");
+        line.setTitle("近30天每日支出");
         AiConfig.load();
         if (AiConfig.isSet()) {
             refresh();
         } else {
-            showAiSetup();   // 首次：询问是否已有 API Key（内部完成后 refresh）
+            // 首次：询问是否已有 API Key（结束后刷新界面）
+            AiSettingsDialog.show(this::refresh);
         }
     }
 
@@ -68,55 +69,6 @@ public class DashboardController {
             new Alert(Alert.AlertType.INFORMATION,
                     "暂时连不上云端（后端未启动时属正常），已保持本地离线使用。\n" + e.getMessage()).show();
         }
-    }
-
-    /** 首次使用 AI 分析：询问是否已有自己的 API Key；选择并保存后不再提示。 */
-    private void showAiSetup() {
-        Dialog<Boolean> dlg = new Dialog<>();
-        dlg.setTitle("AI 消费分析");
-        dlg.setHeaderText("AI 分析默认使用内置规则引擎。\n是否已有自己的 API Key？可填入 Key 启用大模型分析。");
-
-        TextField keyField = new TextField();
-        keyField.setPromptText("API Key（如 sk-...）");
-        TextField baseField = new TextField();
-        baseField.setText("https://api.openai.com/v1");
-        baseField.setPromptText("接口地址");
-        TextField modelField = new TextField();
-        modelField.setText("gpt-4o-mini");
-        modelField.setPromptText("模型");
-
-        GridPane grid = new GridPane();
-        grid.setHgap(10);
-        grid.setVgap(10);
-        grid.addRow(0, new Label("API Key"), keyField);
-        grid.addRow(1, new Label("接口地址"), baseField);
-        grid.addRow(2, new Label("模型"), modelField);
-        dlg.getDialogPane().setContent(grid);
-
-        ButtonType btLlm = new ButtonType("使用大模型", ButtonBar.ButtonData.OK_DONE);
-        ButtonType btRule = new ButtonType("用默认规则引擎", ButtonBar.ButtonData.CANCEL_CLOSE);
-        dlg.getDialogPane().getButtonTypes().addAll(btLlm, btRule);
-        dlg.setResultConverter(bt -> bt == btLlm ? Boolean.TRUE : Boolean.FALSE);
-
-        Boolean useLlm = dlg.showAndWait().orElse(false);
-        try {
-            if (Boolean.TRUE.equals(useLlm)) {
-                String key = keyField.getText().trim();
-                if (key.isEmpty()) {
-                    AiConfig.save(false, "", "", "");
-                    info("未填写 API Key，已使用默认规则引擎");
-                } else {
-                    AiConfig.save(true, key, baseField.getText().trim(), modelField.getText().trim());
-                    info("已启用大模型分析（Key 已保存）");
-                }
-            } else {
-                AiConfig.save(false, "", "", "");
-                info("已使用默认规则引擎");
-            }
-        } catch (Exception e) {
-            info("AI 设置保存失败: " + e.getMessage());
-        }
-        refresh();
     }
 
     private void info(String msg) {
@@ -167,31 +119,28 @@ public class DashboardController {
     private void renderLine(LocalDate now) {
         int days = 30;
         LocalDate s = now.minusDays(days - 1L);
-        // 净支出 = 支出 - 收入，逐日汇总
+        // 每日支出：只统计支出（不含收入），逐日汇总
         List<Transaction> txns = db.listTransactions(s, now, null, null);
         Map<LocalDate, BigDecimal> perDayExp = new HashMap<>();
-        Map<LocalDate, BigDecimal> perDayInc = new HashMap<>();
         for (Transaction t : txns) {
             if (t.date == null) continue;
             BigDecimal amt = t.amount == null ? BigDecimal.ZERO : t.amount;
             if ("EXPENSE".equals(t.type)) perDayExp.merge(t.date, amt, BigDecimal::add);
-            else if ("INCOME".equals(t.type)) perDayInc.merge(t.date, amt, BigDecimal::add);
         }
         lineHasData = !txns.isEmpty();
         XYChart.Series<Number, Number> series = new XYChart.Series<>();
-        List<Double> netPerDay = new ArrayList<>();
+        List<Double> expensePerDay = new ArrayList<>();
         for (int i = 0; i < days; i++) {
             LocalDate d = s.plusDays(i);
-            double net = perDayExp.getOrDefault(d, BigDecimal.ZERO)
-                    .subtract(perDayInc.getOrDefault(d, BigDecimal.ZERO)).doubleValue();
-            netPerDay.add(net);
-            series.getData().add(new XYChart.Data<>(i, net));
+            double expense = perDayExp.getOrDefault(d, BigDecimal.ZERO).doubleValue();
+            expensePerDay.add(expense);
+            series.getData().add(new XYChart.Data<>(i, expense));
         }
         line.getData().setAll(series);
         // 启用数据点符号，使每个点可悬停/点击查看数值
         line.setCreateSymbols(true);
 
-        // X 轴：索引映射成日期；Y 轴：净支出金额
+        // X 轴：索引映射成日期；Y 轴：当日支出金额
         NumberAxis xAxis = (NumberAxis) line.getXAxis();
         xAxis.setTickUnit(5);
         xAxis.setLabel("日期");
@@ -207,7 +156,7 @@ public class DashboardController {
             }
         });
         NumberAxis yAxis = (NumberAxis) line.getYAxis();
-        yAxis.setLabel("净支出(元)");
+        yAxis.setLabel("支出(元)");
         yAxis.setTickLabelFormatter(new StringConverter<Number>() {
             @Override
             public String toString(Number n) {
@@ -220,7 +169,7 @@ public class DashboardController {
             }
         });
 
-        // 悬停/点击数据点：显示具体值（日期 + 净支出金额）。
+        // 悬停/点击数据点：显示具体值（日期 + 当日支出金额）。
         // 直接按鼠标最近的数据点节点定位，避免依赖节点布局时机。
         final DateTimeFormatter dayFmt = DateTimeFormatter.ofPattern("M.d");
         final Tooltip tip = new Tooltip();
@@ -241,7 +190,7 @@ public class DashboardController {
             if (best != null && bestDist < 60) {
                 int idx = best.getXValue().intValue();
                 LocalDate day = s.plusDays(idx);
-                tip.setText(day.format(dayFmt) + "  净支出 ¥" + String.format("%.2f", netPerDay.get(idx)));
+                tip.setText(day.format(dayFmt) + "  支出 ¥" + String.format("%.2f", expensePerDay.get(idx)));
                 tip.show(line, e.getScreenX(), e.getScreenY() + 14);
             } else {
                 tip.hide();
