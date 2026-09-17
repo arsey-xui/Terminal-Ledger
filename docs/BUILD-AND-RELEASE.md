@@ -39,7 +39,7 @@ docker compose up -d
 - 默认生成 **app-image**：`outputs\TerminalLedger\TerminalLedger.exe`，**双击即用**，无需 JDK。
 - 想要 MSI 安装包（需本机装 WiX 3.x）：
   ```powershell
-.\scripts\build-desktop-installer.ps1 -Version 1.1.0 -Msi
+.\scripts\build-desktop-installer.ps1 -Version 1.1.1 -Msi
   ```
 
 原理：`maven-shade-plugin` 把 H2/Jackson/OkHttp/JavaFX 打成单个 fat jar，再用 `jpackage` 生成原生启动器，携带运行库，用户无需自装环境。

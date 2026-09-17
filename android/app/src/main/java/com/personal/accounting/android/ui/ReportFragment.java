@@ -57,6 +57,9 @@ import java.util.concurrent.Executors;
 /** 报表页：概览卡片 + 分类饼图 + 近30天趋势 + 预算进度 + 年度热力图。 */
 public class ReportFragment extends Fragment {
 
+    /** 占比大于该值的扇区把标签画在扇区内；小于等于该值的画在扇区外并加引线。 */
+    private static final float MIN_PERCENT_INSIDE_LABEL = 10f;
+
     private TransactionRepo txRepo;
     private CategoryRepo catRepo;
     private BudgetRepo budgetRepo;
@@ -237,40 +240,40 @@ public class ReportFragment extends Fragment {
         if (entries.isEmpty()) return;
         PieDataSet ds = new PieDataSet(entries, "支出构成");
         ds.setColors(colors);
-        // 分类名与金额都放到扇区外面，用引线连回扇区（扇区内只留引线锚点）
-        ds.setValueTextSize(11f);
+        // 标签位置由 PieSliceLabelRenderer 按扇区分别决定：
+        // >10% 的扇区标在扇区内（金额一行、分类名一行），<=10% 的标在扇区外用引线连回
+        ds.setValueTextSize(12f);
         ds.setValueTextColor(Color.parseColor("#4A4A4A"));
-        ds.setXValuePosition(PieDataSet.ValuePosition.OUTSIDE_SLICE);
-        ds.setYValuePosition(PieDataSet.ValuePosition.OUTSIDE_SLICE);
-        ds.setValueLinePart1OffsetPercentage(70f);
-        ds.setValueLinePart1Length(0.55f);
-        ds.setValueLinePart2Length(0.4f);
-        ds.setValueLineColor(Color.parseColor("#B0B0B0"));
-        ds.setValueLineWidth(1f);
-        ds.setUsingSliceColorAsValueLineColor(false);
+        ds.setXValuePosition(PieDataSet.ValuePosition.INSIDE_SLICE);
+        ds.setYValuePosition(PieDataSet.ValuePosition.INSIDE_SLICE);
         PieData data = new PieData(ds);
-        final double totalAmount = pieTotal(byCat);
         data.setValueFormatter(new ValueFormatter() {
             @Override
             public String getPieLabel(float value, PieEntry entry) {
-                // 饼图外部标签走的是 getPieLabel（不是 getFormattedValue）：
-                // 分类名必须取自 entry 自身，不能按金额反查（金额相同的分类会被标错名）
+                // 实际标签由 PieSliceLabelRenderer 绘制（它需要"按扇区"决定内/外），
+                // 这里只保留取值口径：分类名取自 entry 自身，不能按金额反查
                 String label = entry.getLabel();
-                String name = (label == null || label.isEmpty()) ? "" : label + " ";
-                double percent = totalAmount > 0 ? value * 100 / totalAmount : 0;
-                return String.format("%s%.0f元 · %.0f%%", name, value, percent);
+                return (label == null || label.isEmpty()) ? "未分类" : label;
             }
         });
         pie.setData(data);
-        // 给外侧标签留空间：额外偏移，标签才不会溢出边界
-        pie.setExtraOffsets(14f, 10f, 14f, 10f);
+        // 给外侧标签留空间：加大上下边距（标签主要在上下两侧），避免出界
+        pie.setExtraOffsets(10f, 26f, 10f, 26f);
         pie.setDrawEntryLabels(false);
         pie.setDrawCenterText(false);
-        // 保持环形图形态：中心留洞（用回 MPAndroidChart 默认值，之前误设为 0 会变成实心饼图）
-        pie.setHoleRadius(50f);
-        pie.setTransparentCircleRadius(55f);
+        // 环形图：洞更大、圆更小，给外置标签让出空间（之前 50 的洞 + 大环显得过大）
+        pie.setHoleRadius(58f);
+        pie.setTransparentCircleRadius(62f);
+        // 自定义渲染器：大扇区内置标签、小扇区外置标签 + 引线
+        pie.setRenderer(new PieSliceLabelRenderer(pie, pie.getViewPortHandler(), pie.getAnimator(),
+                MIN_PERCENT_INSIDE_LABEL,
+                dp(12),                          // 金额：黑字，带「元」
+                dp(11),                          // 分类名：白字
+                Color.BLACK,
+                Color.WHITE,
+                Color.parseColor("#B0B0B0")));   // 极窄扇区兜底引线
         pie.getDescription().setEnabled(false);
-        // 外侧标签已含分类名与占比，图例冗余，隐藏以腾出空间
+        // 标签已含金额与分类名，图例冗余，隐藏以腾出空间
         pie.getLegend().setEnabled(false);
         pie.invalidate();
     }

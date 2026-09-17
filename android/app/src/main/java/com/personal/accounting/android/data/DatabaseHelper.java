@@ -6,6 +6,10 @@ import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
 /**
  * 本地全量缓存数据库（SQLite）。
  *
@@ -24,7 +28,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     @Override
     public void onOpen(SQLiteDatabase db) {
         super.onOpen(db);
-        // 首次使用自动写入内置默认分类/账户；仅在对应表为空时插入，避免重复。
+        // 首次使用自动写入内置默认分类/账户。
         seedDefaults(db);
     }
 
@@ -63,27 +67,28 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     }
 
     /**
-     * 内置默认数据（与需求一致）：分类（餐饮、交通…其他）与账户（现金、储蓄卡…支付宝）。
-     * 表为空才写入，因此对“升级已有安装”也生效，且不会覆盖用户数据。
+     * 首次使用（或旧版本重置后只剩墓碑、UI 看不到任何分类/账户）时补回内置默认数据：
+     * 支出分类 餐饮/交通/购物/住房/通讯/医疗/教育/娱乐/人情/其他，
+     * 收入分类 工资/副业/红包/其他收入，账户 现金/储蓄卡/信用卡/微信/支付宝。
+     *
+     * <p>只在「未删除的某类分类/账户一个都没有」时补，所以用户自己删掉个别默认分类后，
+     * 不会被反复还原。</p>
      */
     private void seedDefaults(SQLiteDatabase db) {
-        if (isEmpty(db, "category")) {
-            insertDefaultExpenseCategories(db);
-        }
-        if (!hasType(db, "category", "INCOME")) {
-            insertDefaultIncomeCategories(db);
-        }
-        if (isEmpty(db, "accounts")) {
-            insertDefaultAccounts(db);
-        }
+        if (!hasVisibleType(db, "category", "EXPENSE")) insertDefaultExpenseCategories(db);
+        if (!hasVisibleType(db, "category", "INCOME")) insertDefaultIncomeCategories(db);
+        if (!hasVisible(db, "accounts")) insertDefaultAccounts(db);
     }
 
     /**
      * 恢复内置默认分类与账户（不重置任何流水/预算）。
-     * 供「管理分类 / 管理账户」的重置按钮使用：软删除项已被移出 UI，
-     * 这里按固定 clientId 重新写入并把 deleted 置 0、last_modified 刷新为当前时间，
-     * 因此在 LWW 同步里恢复动作会胜过其它设备上的旧删除墓碑。
-     * 可在任意状态下重复调用（幂等）。
+     * 供「管理分类 / 管理账户」的重置按钮使用。
+     *
+     * <p>关键点：默认数据的 clientId 是固定的，若该行只是被**软删除**（重置按钮第一步
+     * 刚做过这件事），普通 INSERT 会撞主键失败、被 SQLite 静默忽略，结果默认分类/账户
+     * 一个都不回来。所以这里用 INSERT + ON CONFLICT DO UPDATE：已存在则把 deleted 置 0、
+     * 名称/图标/类型修正、last_modified 刷新为当前时间（LWW 同步里恢复动作胜过其它设备
+     * 上的旧删除墓碑），created_at 保持不变。用户自建分类/账户不受影响，仍是软删除状态。</p>
      */
     public void restoreDefaults() {
         SQLiteDatabase db = getWritableDatabase();
@@ -121,35 +126,68 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     }
 
     private void insertCategory(SQLiteDatabase db, String id, String name, String icon, String type) {
+        long now = System.currentTimeMillis();
         ContentValues v = new ContentValues();
         v.put("client_id", id);
         v.put("name", name);
-        v.put("type", type);
         v.put("icon", icon);
-        v.put("deleted", 0);
-        v.put("last_modified", System.currentTimeMillis());
-        db.insert("category", null, v);
+        v.put("type", type);
+        v.put("created_at", String.valueOf(now));
+        upsertDefault(db, "category", v, now);
     }
 
     private void insertAccount(SQLiteDatabase db, String id, String name, String type, String icon) {
+        long now = System.currentTimeMillis();
         ContentValues v = new ContentValues();
         v.put("client_id", id);
         v.put("name", name);
-        v.put("type", type);
         v.put("icon", icon);
-        v.put("deleted", 0);
-        v.put("last_modified", System.currentTimeMillis());
-        db.insert("accounts", null, v);
+        v.put("type", type);
+        v.put("created_at", String.valueOf(now));
+        upsertDefault(db, "accounts", v, now);
     }
 
-    private boolean isEmpty(SQLiteDatabase db, String table) {
-        try (Cursor c = db.rawQuery("SELECT COUNT(*) FROM " + table, null)) {
-            return c.moveToFirst() && c.getInt(0) == 0;
+    /**
+     * 写入一条默认数据：不存在则插入（deleted=0），已存在则**复活**该行
+     * （deleted=0、刷新 last_modified、修正名称/图标/类型），created_at 保留原值。
+     * 用 ON CONFLICT DO UPDATE 保证「重置」不会被主键冲突静默吞掉。
+     */
+    private void upsertDefault(SQLiteDatabase db, String table, ContentValues v, long now) {
+        StringBuilder cols = new StringBuilder();
+        List<Object> args = new ArrayList<>();
+        int count = 0;
+        for (Map.Entry<String, Object> e : v.valueSet()) {
+            if (count++ > 0) cols.append(", ");
+            cols.append(e.getKey());
+            args.add(e.getValue());
+        }
+        cols.append(", deleted, last_modified");
+        args.add(0);
+        args.add(now);
+
+        StringBuilder placeholders = new StringBuilder();
+        for (int i = 0; i < args.size(); i++) {
+            if (i > 0) placeholders.append(", ");
+            placeholders.append('?');
+        }
+
+        db.execSQL("INSERT INTO " + table + " (" + cols + ") VALUES (" + placeholders + ") " +
+                        "ON CONFLICT(client_id) DO UPDATE SET " +
+                        "name=excluded.name, icon=excluded.icon, type=excluded.type, " +
+                        "deleted=0, last_modified=excluded.last_modified",
+                args.toArray());
+    }
+
+    /** 该表是否还有「未被软删除」的行。 */
+    private boolean hasVisible(SQLiteDatabase db, String table) {
+        try (Cursor c = db.rawQuery("SELECT COUNT(*) FROM " + table + " WHERE deleted=0", null)) {
+            return c.moveToFirst() && c.getInt(0) > 0;
         }
     }
 
-    private boolean hasType(SQLiteDatabase db, String table, String type) {
-        try (Cursor c = db.rawQuery("SELECT COUNT(*) FROM " + table + " WHERE type=?",
+    /** 该表是否还有「未被软删除」的指定类型行（分类分支出/收入）。 */
+    private boolean hasVisibleType(SQLiteDatabase db, String table, String type) {
+        try (Cursor c = db.rawQuery("SELECT COUNT(*) FROM " + table + " WHERE deleted=0 AND type=?",
                 new String[]{type})) {
             return c.moveToFirst() && c.getInt(0) > 0;
         }

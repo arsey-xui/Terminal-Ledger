@@ -206,18 +206,20 @@ public class SettingsFragment extends Fragment {
 
     // ---------- 重置为初次安装状态 ----------
     private void resetCategories() {
-        confirmReset("分类", "会删除你自建的全部分类，并恢复内置默认分类；流水记录不会被删除。",
+        confirmReset("分类", "会删除你自建的全部分类，并恢复内置默认分类（支出：餐饮、交通、购物、住房、通讯、"
+                        + "医疗、教育、娱乐、人情、其他；收入：工资、副业、红包、其他收入）；流水记录不会被删除。",
                 () -> {
                     catRepo.resetToDefaults();
-                    Toast.makeText(requireContext(), "分类已恢复默认", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(requireContext(), "已恢复 10 个支出分类、4 个收入分类", Toast.LENGTH_SHORT).show();
                 });
     }
 
     private void resetAccounts() {
-        confirmReset("账户", "会删除你自建的全部账户，并恢复内置默认账户；流水记录不会被删除。",
+        confirmReset("账户", "会删除你自建的全部账户，并恢复内置默认账户（现金、储蓄卡、信用卡、微信、支付宝）；"
+                        + "流水记录不会被删除。",
                 () -> {
                     accountRepo.resetToDefaults();
-                    Toast.makeText(requireContext(), "账户已恢复默认", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(requireContext(), "已恢复 5 个默认账户", Toast.LENGTH_SHORT).show();
                 });
     }
 

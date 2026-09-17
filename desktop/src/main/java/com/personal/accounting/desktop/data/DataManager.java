@@ -126,8 +126,13 @@ public class DataManager implements AutoCloseable {
         }
     }
 
+    /**
+     * 该表是否没有任何「未删除」的行。软删除是墓碑（deleted=1），所以只数 deleted=0：
+     * 用户把分类/账户删完后重启不应被当成"首次安装"重新灌一遍默认数据。
+     */
     private boolean isEmpty(String table) throws Exception {
-        try (Statement s = conn.createStatement(); ResultSet rs = s.executeQuery("SELECT COUNT(*) FROM " + table)) {
+        try (Statement s = conn.createStatement();
+             ResultSet rs = s.executeQuery("SELECT COUNT(*) FROM " + table + " WHERE deleted=0")) {
             rs.next();
             return rs.getInt(1) == 0;
         }
@@ -135,7 +140,7 @@ public class DataManager implements AutoCloseable {
 
     private boolean hasType(String type) throws Exception {
         try (PreparedStatement ps = conn.prepareStatement(
-                "SELECT COUNT(*) FROM category WHERE type=?")) {
+                "SELECT COUNT(*) FROM category WHERE deleted=0 AND type=?")) {
             ps.setString(1, type);
             try (ResultSet rs = ps.executeQuery()) {
                 rs.next();
@@ -165,19 +170,21 @@ public class DataManager implements AutoCloseable {
 
     private void seedAccount(String id, String name, String type, String icon) throws Exception {
         long now = System.currentTimeMillis();
-        // 同 seedCategory：重置时可能已存在墓碑行，用 MERGE 覆盖并把 deleted 置 0
+        // 同 seedCategory：重置时可能已存在墓碑行，用 MERGE 覆盖并把 deleted 置 0。
+        // 有意不带 initial_balance：命中已有行时该列不进 UPDATE 列表，
+        // 从而「重置账户」保留用户原来设置的初始余额；新插入的行由列默认值 0 补齐。
         try (PreparedStatement ps = conn.prepareStatement(
-                "MERGE INTO accounts (client_id,name,type,icon,initial_balance,sort_order,last_modified,deleted,created_at,updated_at) KEY(client_id) VALUES(?,?,?,?,?,?,?,?,?,?)")) {
+                "MERGE INTO accounts (client_id,name,type,icon,sort_order,last_modified,deleted,created_at,updated_at) "
+                        + "KEY(client_id) VALUES(?,?,?,?,?,?,?,?,?)")) {
             ps.setString(1, id);
             ps.setString(2, name);
             ps.setString(3, type);
             ps.setString(4, icon);
-            ps.setBigDecimal(5, BigDecimal.ZERO);
-            ps.setInt(6, 0);
-            ps.setLong(7, now);
-            ps.setInt(8, 0);
+            ps.setInt(5, 0);
+            ps.setLong(6, now);
+            ps.setInt(7, 0);
+            ps.setString(8, null);
             ps.setString(9, null);
-            ps.setString(10, null);
             ps.executeUpdate();
         }
     }

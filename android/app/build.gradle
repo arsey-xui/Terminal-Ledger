@@ -22,8 +22,8 @@ android {
         applicationId "com.personal.accounting.android"
         minSdk 21
         targetSdk 34
-        versionCode 2
-        versionName "1.1.0"
+        versionCode 3
+        versionName "1.1.1"
     }
 
     // ABI 打包策略：只打 arm64-v8a 一个包。
