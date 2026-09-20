@@ -8,12 +8,14 @@ import android.util.Log;
 import com.personal.accounting.android.data.AccountRepo;
 import com.personal.accounting.android.data.BudgetRepo;
 import com.personal.accounting.android.data.CategoryRepo;
+import com.personal.accounting.android.data.RecurringRepo;
 import com.personal.accounting.android.data.SyncStateRepo;
 import com.personal.accounting.android.data.TemplateRepo;
 import com.personal.accounting.android.data.TransactionRepo;
 import com.personal.accounting.android.model.Account;
 import com.personal.accounting.android.model.Budget;
 import com.personal.accounting.android.model.Category;
+import com.personal.accounting.android.model.RecurringRule;
 import com.personal.accounting.android.model.Template;
 import com.personal.accounting.android.model.Transaction;
 
@@ -45,6 +47,7 @@ public class SyncManager {
     private final BudgetRepo budgetRepo;
     private final TemplateRepo tplRepo;
     private final SyncStateRepo stateRepo;
+    private final RecurringRepo recurringRepo;
     private final ApiClient api = new ApiClient();
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
@@ -57,6 +60,7 @@ public class SyncManager {
         this.budgetRepo = new BudgetRepo(this.context);
         this.tplRepo = new TemplateRepo(this.context);
         this.stateRepo = new SyncStateRepo(this.context);
+        this.recurringRepo = new RecurringRepo(this.context);
     }
 
     public interface Callback {
@@ -80,10 +84,13 @@ public class SyncManager {
                 push.accounts.addAll(acctRepo.listModifiedSince(0));
                 push.budgets.addAll(budgetRepo.listModifiedSince(0));
                 push.templates.addAll(tplRepo.listModifiedSince(0));
+                push.recurringRules.addAll(recurringRepo.listModifiedSince(0));
 
                 // 2) push
                 if (!push.transactions.isEmpty() || !push.categories.isEmpty() || !push.accounts.isEmpty()
-                        || !push.budgets.isEmpty() || !push.templates.isEmpty()) {
+                        || !push.budgets.isEmpty() || !push.templates.isEmpty()
+                        || !push.recurringRules.isEmpty()) {
+                    // 周期规则也参与同步（规则跨设备共享，待确认项只在各自设备生成）
                     api.post("/api/sync/push", push, SyncPayloads.SyncResult.class);
                 }
 
@@ -103,6 +110,7 @@ public class SyncManager {
                     for (Account a : resp.accounts) acctRepo.upsertLww(a);
                     for (Budget b : resp.budgets) budgetRepo.upsertLww(b);
                     for (Template t : resp.templates) tplRepo.upsertLww(t);
+                    for (RecurringRule r : resp.recurringRules) recurringRepo.upsertLww(r);
                     if (!resp.hasMore || resp.nextCursor == null) {
                         done = true;
                     } else {

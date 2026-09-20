@@ -120,6 +120,37 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
+            android:text="周期记账（自动续费 / 固定月供）"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            android:fontFamily="monospace"
+            android:textStyle="bold" />
+        <TextView
+            android:id="@+id/recurring_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="到期后会生成「待确认」项，确认后才写入流水。"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp" />
+        <LinearLayout
+            android:id="@+id/recurring_container"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+        <Button
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:id="@+id/btn_add_recurring"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="新建周期规则"
+            android:textColor="@color/text_primary"
+            app:cornerRadius="0dp"
+            app:strokeColor="@color/accent" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
             android:text="高级"
             android:textColor="@color/text_secondary"
             android:textSize="12sp"

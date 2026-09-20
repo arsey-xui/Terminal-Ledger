@@ -107,7 +107,35 @@ public class RecordFragment extends Fragment {
         ((TextView) v.findViewById(R.id.summary_income)).setText(String.format("¥%.2f", s[0]));
         ((TextView) v.findViewById(R.id.summary_expense)).setText(String.format("¥%.2f", s[1]));
         ((TextView) v.findViewById(R.id.summary_balance)).setText(String.format("¥%.2f", s[2]));
+
+        refreshRecurringHint(v);
         return v;
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        // 从设置页确认完待办回来时刷新提示
+        View v = getView();
+        if (v != null) refreshRecurringHint(v);
+    }
+
+    /** 周期记账：有待确认项时提示去「设置 → 周期记账」确认。 */
+    private void refreshRecurringHint(View v) {
+        TextView hint = v.findViewById(R.id.recurring_pending_hint);
+        if (hint == null) return;
+        int pendingCount;
+        try {
+            pendingCount = new com.personal.accounting.android.data.RecurringRepo(requireContext()).pendingCount();
+        } catch (Exception e) {
+            pendingCount = 0;
+        }
+        if (pendingCount > 0) {
+            hint.setVisibility(View.VISIBLE);
+            hint.setText("● 有 " + pendingCount + " 笔周期记账待确认，去「设置 → 周期记账」确认入账");
+        } else {
+            hint.setVisibility(View.GONE);
+        }
     }
 
     // ---------- 分类 ----------

@@ -8,7 +8,10 @@ import android.os.Looper;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
 import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -21,8 +24,12 @@ import com.personal.accounting.android.R;
 import com.personal.accounting.android.data.AccountRepo;
 import com.personal.accounting.android.data.BudgetRepo;
 import com.personal.accounting.android.data.CategoryRepo;
+import com.personal.accounting.android.data.Recurrence;
+import com.personal.accounting.android.data.RecurringRepo;
 import com.personal.accounting.android.model.Account;
 import com.personal.accounting.android.model.Category;
+import com.personal.accounting.android.model.RecurringPending;
+import com.personal.accounting.android.model.RecurringRule;
 import com.personal.accounting.android.sync.SyncConfig;
 import com.personal.accounting.android.sync.SyncManager;
 import com.personal.accounting.android.update.ApkUpdater;
@@ -43,6 +50,8 @@ public class SettingsFragment extends Fragment {
     private TextView versionView;
     private CategoryRepo catRepo;
     private AccountRepo accountRepo;
+    private RecurringRepo recurringRepo;
+    private LinearLayout recurringContainer;
 
     /** 版本检查走后台线程，避免网络请求卡 UI。 */
     private final ExecutorService updateExec = Executors.newSingleThreadExecutor();
@@ -59,6 +68,8 @@ public class SettingsFragment extends Fragment {
         versionView.setText("当前版本：" + currentVersion());
         catRepo = new CategoryRepo(requireContext());
         accountRepo = new AccountRepo(requireContext());
+        recurringRepo = new RecurringRepo(requireContext());
+        recurringContainer = v.findViewById(R.id.recurring_container);
 
         SharedPreferences sp = requireContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         urlInput.setText(SyncConfig.BASE_URL);
@@ -92,6 +103,9 @@ public class SettingsFragment extends Fragment {
         v.findViewById(R.id.btn_reset_budget).setOnClickListener(x -> resetBudgets());
         v.findViewById(R.id.btn_check_update).setOnClickListener(x -> checkUpdate());
         v.findViewById(R.id.btn_update_source).setOnClickListener(x -> configureUpdateSource());
+        v.findViewById(R.id.btn_add_recurring).setOnClickListener(x -> showRecurringDialog(null));
+        recurringRepo.materialize(java.time.LocalDate.now());
+        renderRecurring();
         return v;
     }
 
@@ -291,6 +305,366 @@ public class SettingsFragment extends Fragment {
                 .setPositiveButton("删除", (d, w) -> action.run())
                 .setNegativeButton("取消", null)
                 .show();
+    }
+
+    // ---------- 周期记账（自动续费） ----------
+
+    /** 渲染「待确认清单 + 规则列表」。 */
+    private void renderRecurring() {
+        if (recurringContainer == null) return;
+        recurringContainer.removeAllViews();
+
+        List<RecurringPending> pending = recurringRepo.listPending();
+        TextView pendingTitle = sectionTitle("待确认（" + pending.size() + "）");
+        recurringContainer.addView(pendingTitle);
+        if (pending.isEmpty()) {
+            recurringContainer.addView(hint("暂无到期的周期记账"));
+        } else {
+            for (RecurringPending p : pending) recurringContainer.addView(pendingRow(p));
+        }
+
+        List<RecurringRule> rules = recurringRepo.list();
+        recurringContainer.addView(sectionTitle("规则（" + rules.size() + "）"));
+        if (rules.isEmpty()) {
+            recurringContainer.addView(hint("还没有周期规则，点下面的「新建周期规则」添加，"
+                    + "例如每月 1 日房租、每 30 天某个会员续费"));
+        } else {
+            for (RecurringRule r : rules) recurringContainer.addView(ruleRow(r));
+        }
+    }
+
+    private TextView sectionTitle(String text) {
+        TextView tv = new TextView(requireContext());
+        tv.setText(text);
+        tv.setTextSize(13f);
+        tv.setPadding(0, dp(10), 0, dp(2));
+        tv.setTextColor(getResources().getColor(R.color.text_primary));
+        return tv;
+    }
+
+    private TextView hint(String text) {
+        TextView tv = new TextView(requireContext());
+        tv.setText(text);
+        tv.setTextSize(12f);
+        tv.setTextColor(getResources().getColor(R.color.text_secondary));
+        return tv;
+    }
+
+    private View pendingRow(RecurringPending p) {
+        LinearLayout row = new LinearLayout(requireContext());
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setPadding(0, dp(6), 0, dp(6));
+
+        TextView info = new TextView(requireContext());
+        String cat = catRepo.findActive(p.categoryClientId) == null ? "未分类"
+                : catRepo.findActive(p.categoryClientId).name;
+        String sign = "INCOME".equals(p.type) ? "收入" : "支出";
+        info.setText(p.date + "  " + sign + " " + String.format("%.2f", p.amount)
+                + "  " + cat + (p.note == null || p.note.isBlank() ? "" : "  · " + p.note));
+        info.setTextColor(getResources().getColor(R.color.text_primary));
+        row.addView(info);
+
+        LinearLayout actions = new LinearLayout(requireContext());
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        Button confirm = new Button(requireContext());
+        confirm.setText("确认入账");
+        confirm.setOnClickListener(x -> confirmPending(p));
+        Button edit = new Button(requireContext());
+        edit.setText("改金额后确认");
+        edit.setOnClickListener(x -> editAndConfirmPending(p));
+        Button skip = new Button(requireContext());
+        skip.setText("忽略本期");
+        skip.setOnClickListener(x -> {
+            recurringRepo.skip(p.clientId);
+            renderRecurring();
+        });
+        actions.addView(confirm);
+        actions.addView(edit);
+        actions.addView(skip);
+        row.addView(actions);
+        return row;
+    }
+
+    private View ruleRow(RecurringRule r) {
+        LinearLayout row = new LinearLayout(requireContext());
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(0, dp(6), 0, dp(6));
+
+        TextView info = new TextView(requireContext());
+        info.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        String cat = catRepo.findActive(r.categoryClientId) == null ? "未分类"
+                : catRepo.findActive(r.categoryClientId).name;
+        String acct = accountRepo.find(r.accountClientId) == null ? "默认账户"
+                : accountRepo.find(r.accountClientId).name;
+        info.setText(r.name + "  " + String.format("%.2f", r.amount) + " 元\n"
+                + Recurrence.describe(r) + " · " + cat + " · " + acct
+                + (r.enabled ? "" : "（已停用）"));
+        info.setTextColor(getResources().getColor(R.color.text_primary));
+        info.setTextSize(13f);
+        row.addView(info);
+
+        Button edit = new Button(requireContext());
+        edit.setText("编辑");
+        edit.setOnClickListener(x -> showRecurringDialog(r));
+        row.addView(edit);
+
+        Button del = new Button(requireContext());
+        del.setText("删除");
+        del.setOnClickListener(x -> confirmDelete(r.name, () -> {
+            recurringRepo.delete(r.clientId);
+            Toast.makeText(requireContext(), "已删除规则：" + r.name, Toast.LENGTH_SHORT).show();
+            renderRecurring();
+        }));
+        row.addView(del);
+        return row;
+    }
+
+    private void confirmPending(RecurringPending p) {
+        recurringRepo.confirm(p.clientId, null);
+        Toast.makeText(requireContext(), "已入账：" + p.date + " " + String.format("%.2f", p.amount) + " 元",
+                Toast.LENGTH_SHORT).show();
+        renderRecurring();
+    }
+
+    private void editAndConfirmPending(RecurringPending p) {
+        EditText input = new EditText(requireContext());
+        input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER
+                | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        input.setText(String.format("%.2f", p.amount));
+        new AlertDialog.Builder(requireContext())
+                .setTitle("确认金额（" + p.date + "）")
+                .setView(input)
+                .setPositiveButton("确认入账", (d, w) -> {
+                    double amount = p.amount;
+                    try {
+                        amount = Double.parseDouble(input.getText().toString().trim());
+                    } catch (Exception ignore) {
+                        // 解析失败就沿用原金额
+                    }
+                    recurringRepo.confirm(p.clientId, amount);
+                    Toast.makeText(requireContext(), "已入账：" + String.format("%.2f", amount) + " 元",
+                            Toast.LENGTH_SHORT).show();
+                    renderRecurring();
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    /**
+     * 弹窗里「类型 / 分类 / 账户」这类"点一下就能选"的行：
+     * 等宽 + 内边距 + 边框 + 浅底 + 左侧强调色竖条，让它们看起来像按钮而不是普通文字。
+     */
+    private TextView pickerRow() {
+        TextView tv = new TextView(requireContext());
+        tv.setTextSize(15f);
+        tv.setTextColor(getResources().getColor(R.color.text_primary));
+        tv.setPadding(dp(14), dp(12), dp(14), dp(12));
+        tv.setBackground(pickerRowBackground());
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = dp(8);
+        tv.setLayoutParams(lp);
+        return tv;
+    }
+
+    /** 行背景：浅灰底 + 深灰描边 + 左侧 4dp 强调色竖条（用 LayerDrawable 拼出来）。 */
+    private android.graphics.drawable.Drawable pickerRowBackground() {
+        android.graphics.drawable.GradientDrawable body = new android.graphics.drawable.GradientDrawable();
+        body.setColor(getResources().getColor(R.color.card));
+        body.setStroke(dp(1), getResources().getColor(R.color.hairline));
+        body.setCornerRadius(dp(4));
+
+        android.graphics.drawable.GradientDrawable accentBar = new android.graphics.drawable.GradientDrawable();
+        accentBar.setColor(getResources().getColor(R.color.accent));
+        accentBar.setCornerRadius(dp(2));
+        accentBar.setSize(dp(4), ViewGroup.LayoutParams.MATCH_PARENT);
+
+        android.graphics.drawable.LayerDrawable layers = new android.graphics.drawable.LayerDrawable(
+                new android.graphics.drawable.Drawable[]{body, accentBar});
+        layers.setLayerInset(1, dp(1), dp(1), -1, dp(1));
+        layers.setLayerGravity(1, android.view.Gravity.START | android.view.Gravity.FILL_VERTICAL);
+        return layers;
+    }
+
+    /**
+     * 新建 / 编辑规则。规则字段较多，用程序化布局而不是 XML，避免再造一个 layout 文件。
+     */
+    private void showRecurringDialog(@Nullable RecurringRule editing) {
+        boolean isNew = editing == null;
+        RecurringRule rule = isNew ? new RecurringRule() : editing;
+
+        LinearLayout box = new LinearLayout(requireContext());
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(16), dp(8), dp(16), dp(8));
+
+        EditText nameInput = new EditText(requireContext());
+        nameInput.setHint("名称，如「房租」「视频会员」");
+        if (!isNew) nameInput.setText(rule.name);
+        box.addView(nameInput);
+
+        EditText amountInput = new EditText(requireContext());
+        amountInput.setHint("金额");
+        amountInput.setInputType(android.text.InputType.TYPE_CLASS_NUMBER
+                | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        if (!isNew) amountInput.setText(String.format("%.2f", rule.amount));
+        box.addView(amountInput);
+
+        EditText countInput = new EditText(requireContext());
+        countInput.setHint("每隔几个单位（如 30）");
+        countInput.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        countInput.setText(String.valueOf(isNew ? 1 : Math.max(1, rule.intervalCount)));
+        box.addView(countInput);
+
+        android.widget.Spinner unitSpinner = new android.widget.Spinner(requireContext());
+        String[] units = {"月", "周", "天"};
+        android.widget.ArrayAdapter<String> adapter = new android.widget.ArrayAdapter<>(requireContext(),
+                android.R.layout.simple_spinner_dropdown_item, units);
+        unitSpinner.setAdapter(adapter);
+        if (!isNew) {
+            if ("WEEK".equals(rule.intervalUnit)) unitSpinner.setSelection(1);
+            else if ("DAY".equals(rule.intervalUnit)) unitSpinner.setSelection(2);
+        }
+        box.addView(unitSpinner);
+
+        EditText anchorInput = new EditText(requireContext());
+        anchorInput.setHint("首次应记日期 yyyy-MM-dd（也可理解为周期起点）");
+        anchorInput.setText(isNew ? Recurrence.format(java.time.LocalDate.now()) : rule.anchorDate);
+        box.addView(anchorInput);
+
+        final String[] chosenCategory = {rule.categoryClientId};
+        final String[] chosenAccount = {rule.accountClientId};
+        final boolean[] expense = {isNew || !"INCOME".equals(rule.type)};
+
+        java.util.List<Category> cats = expense[0] ? catRepo.listExpense() : catRepo.listIncome();
+        java.util.List<Account> accounts = accountRepo.list();
+        if (isNew) {
+            if (!cats.isEmpty()) chosenCategory[0] = cats.get(0).clientId;
+            if (!accounts.isEmpty()) chosenAccount[0] = accounts.get(0).clientId;
+            rule.type = "EXPENSE";
+        }
+
+        // 类型 / 分类 / 账户这三行是弹窗里最需要点击的地方，做成带框的卡片式按钮，别再是一行灰字
+        TextView typeRow = pickerRow();
+        final Runnable refreshType = () -> typeRow.setText("类型　" + (expense[0] ? "支出" : "收入") + "　（点击切换）");
+        refreshType.run();
+        box.addView(typeRow);
+
+        TextView categoryRow = pickerRow();
+        final Runnable refreshCategory = () -> {
+            Category c = catRepo.findActive(chosenCategory[0]);
+            categoryRow.setText("分类　" + (c == null ? "请选择" : c.name) + "　（点击选择）");
+        };
+        refreshCategory.run();
+        box.addView(categoryRow);
+
+        TextView accountRow = pickerRow();
+        final Runnable refreshAccount = () -> {
+            Account a = accountRepo.find(chosenAccount[0]);
+            accountRow.setText("账户　" + (a == null ? "请选择" : a.name) + "　（点击选择）");
+        };
+        refreshAccount.run();
+        box.addView(accountRow);
+
+        EditText noteInput = new EditText(requireContext());
+        noteInput.setHint("备注（可空）");
+        if (!isNew) noteInput.setText(rule.note);
+        box.addView(noteInput);
+
+        ScrollView scroll = new ScrollView(requireContext());
+        scroll.addView(box);
+        AlertDialog dialog = new AlertDialog.Builder(requireContext())
+                .setTitle(isNew ? "新建周期规则" : "编辑周期规则")
+                .setView(scroll)
+                .setPositiveButton("保存", null)
+                .setNegativeButton("取消", null)
+                .create();
+
+        typeRow.setOnClickListener(x -> {
+            expense[0] = !expense[0];
+            refreshType.run();
+            java.util.List<Category> list = expense[0] ? catRepo.listExpense() : catRepo.listIncome();
+            chosenCategory[0] = list.isEmpty() ? null : list.get(0).clientId;
+            refreshCategory.run();
+        });
+        categoryRow.setOnClickListener(x -> {
+            java.util.List<Category> list = expense[0] ? catRepo.listExpense() : catRepo.listIncome();
+            if (list.isEmpty()) {
+                Toast.makeText(requireContext(), "暂无分类，请先在「管理分类」里添加", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            String[] names = new String[list.size()];
+            for (int i = 0; i < list.size(); i++) names[i] = list.get(i).name;
+            new AlertDialog.Builder(requireContext())
+                    .setTitle("选择分类")
+                    .setItems(names, (d, which) -> {
+                        chosenCategory[0] = list.get(which).clientId;
+                        refreshCategory.run();
+                    })
+                    .show();
+        });
+        accountRow.setOnClickListener(x -> {
+            if (accounts.isEmpty()) {
+                Toast.makeText(requireContext(), "暂无账户，请先在「管理账户」里添加", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            String[] names = new String[accounts.size()];
+            for (int i = 0; i < accounts.size(); i++) names[i] = accounts.get(i).name;
+            new AlertDialog.Builder(requireContext())
+                    .setTitle("选择账户")
+                    .setItems(names, (d, which) -> {
+                        chosenAccount[0] = accounts.get(which).clientId;
+                        refreshAccount.run();
+                    })
+                    .show();
+        });
+
+        dialog.setOnShowListener(x -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(y -> {
+            String name = nameInput.getText().toString().trim();
+            double amount;
+            int count;
+            java.time.LocalDate anchor = Recurrence.parse(anchorInput.getText().toString().trim());
+            try {
+                amount = Double.parseDouble(amountInput.getText().toString().trim());
+            } catch (Exception e) {
+                Toast.makeText(requireContext(), "请填写正确的金额", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            try {
+                count = Math.max(1, Integer.parseInt(countInput.getText().toString().trim()));
+            } catch (Exception e) {
+                Toast.makeText(requireContext(), "请填写正确的间隔数量，如 1、30", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            if (name.isEmpty()) {
+                Toast.makeText(requireContext(), "请填写名称", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            if (amount <= 0) {
+                Toast.makeText(requireContext(), "金额需要大于 0", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            if (anchor == null) {
+                Toast.makeText(requireContext(), "日期格式应为 yyyy-MM-dd", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            rule.name = name;
+            rule.amount = amount;
+            rule.type = expense[0] ? "EXPENSE" : "INCOME";
+            rule.categoryClientId = chosenCategory[0];
+            rule.accountClientId = chosenAccount[0];
+            rule.note = noteInput.getText().toString().trim();
+            rule.intervalCount = count;
+            rule.intervalUnit = unitSpinner.getSelectedItemPosition() == 1 ? "WEEK"
+                    : unitSpinner.getSelectedItemPosition() == 2 ? "DAY" : "MONTH";
+            rule.anchorDate = Recurrence.format(anchor);
+            rule.enabled = true;
+            recurringRepo.save(rule);
+            recurringRepo.materialize(java.time.LocalDate.now());
+            Toast.makeText(requireContext(), "已保存规则：" + rule.name, Toast.LENGTH_SHORT).show();
+            renderRecurring();
+            dialog.dismiss();
+        }));
+        dialog.show();
     }
 
     private int dp(int v) {

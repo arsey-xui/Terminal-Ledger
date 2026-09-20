@@ -4,6 +4,7 @@ import com.personal.accounting.config.SyncProperties;
 import com.personal.accounting.dto.AccountDto;
 import com.personal.accounting.dto.BudgetDto;
 import com.personal.accounting.dto.CategoryDto;
+import com.personal.accounting.dto.RecurringRuleDto;
 import com.personal.accounting.dto.TemplateDto;
 import com.personal.accounting.dto.TransactionDto;
 import com.personal.accounting.dto.sync.SyncPullRequest;
@@ -14,11 +15,13 @@ import com.personal.accounting.entity.Account;
 import com.personal.accounting.entity.BaseEntity;
 import com.personal.accounting.entity.Budget;
 import com.personal.accounting.entity.Category;
+import com.personal.accounting.entity.RecurringRule;
 import com.personal.accounting.entity.Template;
 import com.personal.accounting.entity.Transaction;
 import com.personal.accounting.repository.AccountRepository;
 import com.personal.accounting.repository.BudgetRepository;
 import com.personal.accounting.repository.CategoryRepository;
+import com.personal.accounting.repository.RecurringRuleRepository;
 import com.personal.accounting.repository.TemplateRepository;
 import com.personal.accounting.repository.TransactionRepository;
 import com.personal.accounting.service.SyncService;
@@ -28,6 +31,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.List;
@@ -54,6 +58,7 @@ public class SyncServiceImpl implements SyncService {
     private final TransactionRepository transactionRepository;
     private final BudgetRepository budgetRepository;
     private final TemplateRepository templateRepository;
+    private final RecurringRuleRepository recurringRuleRepository;
     private final SyncProperties props;
 
     @Override
@@ -80,6 +85,10 @@ public class SyncServiceImpl implements SyncService {
         }
         for (TemplateDto dto : request.getTemplates()) {
             if (mergeTemplate(dto)) result.setUpserted(result.getUpserted() + 1);
+            else result.setSkipped(result.getSkipped() + 1);
+        }
+        for (RecurringRuleDto dto : request.getRecurringRules()) {
+            if (mergeRecurringRule(dto)) result.setUpserted(result.getUpserted() + 1);
             else result.setSkipped(result.getSkipped() + 1);
         }
         return result;
@@ -198,6 +207,23 @@ public class SyncServiceImpl implements SyncService {
         return false;
     }
 
+    private boolean mergeRecurringRule(RecurringRuleDto dto) {
+        Optional<RecurringRule> opt = recurringRuleRepository.findByClientId(dto.getClientId());
+        if (opt.isEmpty()) {
+            RecurringRule r = new RecurringRule();
+            copy(dto, r);
+            recurringRuleRepository.save(r);
+            return true;
+        }
+        RecurringRule existing = opt.get();
+        if (dto.getLastModified() != null && dto.getLastModified() > existing.getLastModified()) {
+            copy(dto, existing);
+            recurringRuleRepository.save(existing);
+            return true;
+        }
+        return false;
+    }
+
     // ------------------------------------------------------------------
     //  游标分页
     // ------------------------------------------------------------------
@@ -209,6 +235,7 @@ public class SyncServiceImpl implements SyncService {
         List<Account> accts = accountRepository.keyset(since, sinceId, PageRequest.of(0, pageSize));
         List<Budget> budgets = budgetRepository.keyset(since, sinceId, PageRequest.of(0, pageSize));
         List<Template> tmpls = templateRepository.keyset(since, sinceId, PageRequest.of(0, pageSize));
+        List<RecurringRule> rules = recurringRuleRepository.keyset(since, sinceId, PageRequest.of(0, pageSize));
 
         SyncPullResponse resp = new SyncPullResponse();
         resp.setServerTime(now());
@@ -217,12 +244,13 @@ public class SyncServiceImpl implements SyncService {
         accts.forEach(a -> resp.getAccounts().add(AccountDto.from(a)));
         budgets.forEach(b -> resp.getBudgets().add(BudgetDto.from(b)));
         tmpls.forEach(t -> resp.getTemplates().add(TemplateDto.from(t)));
+        rules.forEach(r -> resp.getRecurringRules().add(RecurringRuleDto.from(r)));
 
         boolean hasMore = txns.size() == pageSize || cats.size() == pageSize || accts.size() == pageSize
-                || budgets.size() == pageSize || tmpls.size() == pageSize;
+                || budgets.size() == pageSize || tmpls.size() == pageSize || rules.size() == pageSize;
         resp.setHasMore(hasMore);
         if (hasMore) {
-            long maxTs = maxLastModified(txns, cats, accts, budgets, tmpls, since);
+            long maxTs = maxLastModified(txns, cats, accts, budgets, tmpls, rules, since);
             long maxId = txns.isEmpty() ? sinceId : txns.get(txns.size() - 1).getId();
             resp.setNextCursor(encodeCursor(maxTs, maxId));
         }
@@ -248,13 +276,15 @@ public class SyncServiceImpl implements SyncService {
     }
 
     private long maxLastModified(List<Transaction> txns, List<Category> cats, List<Account> accts,
-                                 List<Budget> budgets, List<Template> tmpls, long fallback) {
+                                 List<Budget> budgets, List<Template> tmpls,
+                                 List<RecurringRule> rules, long fallback) {
         long max = fallback;
         for (Transaction t : txns) if (t.getLastModified() > max) max = t.getLastModified();
         for (Category c : cats) if (c.getLastModified() > max) max = c.getLastModified();
         for (Account a : accts) if (a.getLastModified() > max) max = a.getLastModified();
         for (Budget b : budgets) if (b.getLastModified() > max) max = b.getLastModified();
         for (Template t : tmpls) if (t.getLastModified() > max) max = t.getLastModified();
+        for (RecurringRule r : rules) if (r.getLastModified() > max) max = r.getLastModified();
         return max;
     }
 
@@ -357,5 +387,26 @@ public class SyncServiceImpl implements SyncService {
         t.setSortOrder(dto.getSortOrder() == null ? 0 : dto.getSortOrder());
         t.setCreatedAt(t.getCreatedAt() == null ? LocalDateTime.now() : t.getCreatedAt());
         t.setUpdatedAt(LocalDateTime.now());
+    }
+
+    private void copy(RecurringRuleDto dto, RecurringRule r) {
+        r.setClientId(dto.getClientId() != null ? dto.getClientId() : UUID.randomUUID().toString());
+        r.setLastModified(dto.getLastModified() != null ? dto.getLastModified() : System.currentTimeMillis());
+        r.setDeleted(dto.getDeleted() != null ? dto.getDeleted() : false);
+        r.setName(dto.getName());
+        r.setAmount(dto.getAmount());
+        r.setType(dto.getType());
+        r.setCategoryClientId(dto.getCategoryClientId());
+        r.setAccountClientId(dto.getAccountClientId());
+        r.setNote(dto.getNote());
+        r.setIntervalUnit(dto.getIntervalUnit() == null ? "MONTH" : dto.getIntervalUnit());
+        r.setIntervalCount(dto.getIntervalCount() == null || dto.getIntervalCount() < 1
+                ? 1 : dto.getIntervalCount());
+        r.setAnchorDate(dto.getAnchorDate() != null ? dto.getAnchorDate() : LocalDate.now());
+        r.setLastGeneratedDate(dto.getLastGeneratedDate());
+        r.setEnabled(dto.getEnabled() == null || dto.getEnabled());
+        r.setSortOrder(dto.getSortOrder() == null ? 0 : dto.getSortOrder());
+        r.setCreatedAt(r.getCreatedAt() == null ? LocalDateTime.now() : r.getCreatedAt());
+        r.setUpdatedAt(LocalDateTime.now());
     }
 }

@@ -169,8 +169,10 @@ mysql -u root -p < sql/init.sql
 - [docs/API.md](docs/API.md) — REST API
 - [docs/AI-ANALYSIS.md](docs/AI-ANALYSIS.md) — AI 消费分析接口
 - [docs/VOICE-AND-WIDGET.md](docs/VOICE-AND-WIDGET.md) — 语音记账与小组件
-- [docs/RELEASE-NOTES-v1.1.1.md](docs/RELEASE-NOTES-v1.1.1.md) — 当前版本（v1.1.1）更新说明
-- [docs/RELEASE-NOTES-v1.1.0.md](docs/RELEASE-NOTES-v1.1.0.md) — 上一版本（v1.1.0）更新说明
+- [docs/RECURRING.md](docs/RECURRING.md) — 周期记账（自动续费 / 固定收支）
+- [docs/RELEASE-NOTES-v1.2.0.md](docs/RELEASE-NOTES-v1.2.0.md) — 当前版本（v1.2.0）更新说明
+- [docs/RELEASE-NOTES-v1.1.1.md](docs/RELEASE-NOTES-v1.1.1.md) — v1.1.1（修订版，已并入 v1.2.0 发布）
+- [docs/RELEASE-NOTES-v1.1.0.md](docs/RELEASE-NOTES-v1.1.0.md) — 更早版本（v1.1.0）更新说明
 - [docs/BUILD-AND-RELEASE.md](docs/BUILD-AND-RELEASE.md) — 桌面包 / Android APK / Docker 一键出包
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 整体架构
 - [docs/UI-SPEC.md](docs/UI-SPEC.md) — 多端 UI 布局

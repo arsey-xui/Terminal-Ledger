@@ -3,6 +3,7 @@ package com.personal.accounting.dto.sync;
 import com.personal.accounting.dto.AccountDto;
 import com.personal.accounting.dto.BudgetDto;
 import com.personal.accounting.dto.CategoryDto;
+import com.personal.accounting.dto.RecurringRuleDto;
 import com.personal.accounting.dto.TemplateDto;
 import com.personal.accounting.dto.TransactionDto;
 import lombok.Data;
@@ -21,4 +22,5 @@ public class SyncPushRequest {
     private List<AccountDto> accounts = new ArrayList<>();
     private List<BudgetDto> budgets = new ArrayList<>();
     private List<TemplateDto> templates = new ArrayList<>();
+    private List<RecurringRuleDto> recurringRules = new ArrayList<>();
 }

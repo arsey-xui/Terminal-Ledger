@@ -3,6 +3,7 @@ package com.personal.accounting.android.sync;
 import com.personal.accounting.android.model.Account;
 import com.personal.accounting.android.model.Budget;
 import com.personal.accounting.android.model.Category;
+import com.personal.accounting.android.model.RecurringRule;
 import com.personal.accounting.android.model.Template;
 import com.personal.accounting.android.model.Transaction;
 
@@ -22,6 +23,7 @@ public final class SyncPayloads {
         public List<Account> accounts = new ArrayList<>();
         public List<Budget> budgets = new ArrayList<>();
         public List<Template> templates = new ArrayList<>();
+        public List<RecurringRule> recurringRules = new ArrayList<>();
     }
 
     public static class PullRequest {
@@ -40,6 +42,7 @@ public final class SyncPayloads {
         public List<Account> accounts = new ArrayList<>();
         public List<Budget> budgets = new ArrayList<>();
         public List<Template> templates = new ArrayList<>();
+        public List<RecurringRule> recurringRules = new ArrayList<>();
     }
 
     public static class SyncResult {

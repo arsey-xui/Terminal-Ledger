@@ -16,11 +16,13 @@
             <Label text="记账" styleClass="nav-group"/>
             <ToggleButton fx:id="navRecord" text="记账入口" styleClass="nav-btn" onAction="#onRecord"/>
             <ToggleButton fx:id="navAccount" text="账户管理" styleClass="nav-btn" onAction="#onAccount"/>
+            <ToggleButton fx:id="navRecurring" text="周期记账" styleClass="nav-btn" onAction="#onRecurring"/>
             <ToggleButton fx:id="navBudget" text="预算管理" styleClass="nav-btn" onAction="#onBudget"/>
             <Label text="数据" styleClass="nav-group"/>
             <ToggleButton fx:id="navData" text="数据管理" styleClass="nav-btn" onAction="#onData"/>
             <Region VBox.vgrow="ALWAYS"/>
-            <Label text="v0.1.0" styleClass="version"/>
+                <!-- 版本号运行时从打包元数据读取（见 MainController.setBottomVersion），不要写死 -->
+                <Label fx:id="appVersion" text="" styleClass="version"/>
         </VBox>
     </left>
     <center>

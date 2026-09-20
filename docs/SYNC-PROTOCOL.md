@@ -13,7 +13,7 @@
 ## 接口
 
 ```
-POST /api/sync/push          { deviceId, transactions[], categories[], accounts[], budgets[], templates[] }
+POST /api/sync/push          { deviceId, transactions[], categories[], accounts[], budgets[], templates[], recurringRules[] }
 POST /api/sync/pull          { deviceId, since, until?, cursor? }  → { serverTime, hasMore, nextCursor, ... }
 POST /api/sync/pull-window   { deviceId, since, until, cursor? }   → 历史窗口回补
 ```

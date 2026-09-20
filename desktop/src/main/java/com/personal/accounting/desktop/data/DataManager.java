@@ -3,6 +3,8 @@ package com.personal.accounting.desktop.data;
 import com.personal.accounting.desktop.model.Account;
 import com.personal.accounting.desktop.model.Budget;
 import com.personal.accounting.desktop.model.Category;
+import com.personal.accounting.desktop.model.RecurringPending;
+import com.personal.accounting.desktop.model.RecurringRule;
 import com.personal.accounting.desktop.model.Template;
 import com.personal.accounting.desktop.model.Transaction;
 
@@ -44,6 +46,21 @@ public class DataManager implements AutoCloseable {
             s.execute("CREATE TABLE IF NOT EXISTS budget (client_id VARCHAR(36) PRIMARY KEY, category_client_id VARCHAR(36) NOT NULL, budget_year INT NOT NULL, budget_month INT NOT NULL, amount_limit DECIMAL(19,2) NOT NULL, last_modified BIGINT NOT NULL, deleted INT DEFAULT 0, created_at VARCHAR(30), updated_at VARCHAR(30), CONSTRAINT uk_budget UNIQUE(category_client_id, budget_year, budget_month))");
             s.execute("CREATE TABLE IF NOT EXISTS template (client_id VARCHAR(36) PRIMARY KEY, name VARCHAR(64) NOT NULL, amount DECIMAL(19,2), type VARCHAR(16), category_client_id VARCHAR(36), account_client_id VARCHAR(36), note VARCHAR(512), sort_order INT DEFAULT 0, last_modified BIGINT NOT NULL, deleted INT DEFAULT 0, created_at VARCHAR(30), updated_at VARCHAR(30))");
             s.execute("CREATE TABLE IF NOT EXISTS sync_state (device_id VARCHAR(36) PRIMARY KEY, last_sync BIGINT NOT NULL DEFAULT 0)");
+
+            // 周期记账（自动续费）：规则参与同步；待确认项只存本机
+            s.execute("CREATE TABLE IF NOT EXISTS recurring_rule ("
+                    + "client_id VARCHAR(36) PRIMARY KEY, name VARCHAR(64) NOT NULL,"
+                    + " amount DECIMAL(19,2) NOT NULL, txn_type VARCHAR(16) NOT NULL,"
+                    + " category_client_id VARCHAR(36), account_client_id VARCHAR(36), note VARCHAR(512),"
+                    + " interval_unit VARCHAR(8) NOT NULL DEFAULT 'MONTH', interval_count INT NOT NULL DEFAULT 1,"
+                    + " anchor_date DATE NOT NULL, last_generated_date DATE, enabled INT DEFAULT 1,"
+                    + " sort_order INT DEFAULT 0, last_modified BIGINT NOT NULL, deleted INT DEFAULT 0,"
+                    + " created_at VARCHAR(30), updated_at VARCHAR(30))");
+            s.execute("CREATE TABLE IF NOT EXISTS recurring_pending ("
+                    + "client_id VARCHAR(36) PRIMARY KEY, rule_client_id VARCHAR(36) NOT NULL,"
+                    + " date DATE NOT NULL, amount DECIMAL(19,2) NOT NULL, txn_type VARCHAR(16) NOT NULL,"
+                    + " category_client_id VARCHAR(36), account_client_id VARCHAR(36), note VARCHAR(512),"
+                    + " kind VARCHAR(16) NOT NULL DEFAULT 'PENDING', last_modified BIGINT NOT NULL)");
         }
     }
 
@@ -449,6 +466,231 @@ public class DataManager implements AutoCloseable {
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
+    }
+
+    // ---------------- 周期记账（自动续费） ----------------
+
+    /** 未删除的周期规则。 */
+    public List<RecurringRule> listRecurringRules() {
+        return query("SELECT * FROM recurring_rule WHERE deleted=0 ORDER BY sort_order ASC, client_id ASC",
+                DataManager::recurringRule);
+    }
+
+    public RecurringRule findRecurringRule(String clientId) {
+        if (clientId == null) return null;
+        List<RecurringRule> list = query("SELECT * FROM recurring_rule WHERE client_id=?",
+                List.of(clientId), DataManager::recurringRule);
+        return list.isEmpty() ? null : list.get(0);
+    }
+
+    /** 含删除墓碑的规则（同步用）。 */
+    public List<RecurringRule> listRecurringRulesModifiedSince(long since) {
+        return query("SELECT * FROM recurring_rule WHERE last_modified > ?",
+                List.of(since), DataManager::recurringRule);
+    }
+
+    /** 保存规则；last_modified 刷新为当前时间（用户操作）。 */
+    public void saveRecurringRule(RecurringRule r) {
+        if (r.clientId == null || r.clientId.isBlank()) {
+            r.clientId = java.util.UUID.randomUUID().toString();
+        }
+        r.lastModified = System.currentTimeMillis();
+        upsertRecurringRule(r);
+    }
+
+    /** MERGE 写入（含同步下行的数据），保留 createdAt/updatedAt 为 null。 */
+    public void upsertRecurringRule(RecurringRule r) {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "MERGE INTO recurring_rule (client_id,name,amount,txn_type,category_client_id,"
+                        + "account_client_id,note,interval_unit,interval_count,anchor_date,"
+                        + "last_generated_date,enabled,sort_order,last_modified,deleted,created_at,updated_at) "
+                        + "KEY(client_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")) {
+            ps.setString(1, r.clientId);
+            ps.setString(2, r.name);
+            ps.setBigDecimal(3, r.amount == null ? BigDecimal.ZERO : r.amount);
+            ps.setString(4, r.type);
+            ps.setString(5, r.categoryClientId);
+            ps.setString(6, r.accountClientId);
+            ps.setString(7, r.note);
+            ps.setString(8, r.intervalUnit == null ? "MONTH" : r.intervalUnit);
+            ps.setInt(9, Math.max(1, r.intervalCount));
+            ps.setDate(10, java.sql.Date.valueOf(r.anchorDate == null ? LocalDate.now() : r.anchorDate));
+            ps.setDate(11, r.lastGeneratedDate == null ? null : java.sql.Date.valueOf(r.lastGeneratedDate));
+            ps.setInt(12, r.enabled ? 1 : 0);
+            ps.setInt(13, r.sortOrder);
+            ps.setLong(14, r.lastModified);
+            ps.setInt(15, r.deleted ? 1 : 0);
+            ps.setString(16, null);
+            ps.setString(17, null);
+            ps.executeUpdate();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /** 软删除规则，并清掉它尚未确认的待确认项。 */
+    public void deleteRecurringRule(String clientId) {
+        RecurringRule r = findRecurringRule(clientId);
+        if (r == null) return;
+        r.deleted = true;
+        r.lastModified = System.currentTimeMillis();
+        upsertRecurringRule(r);
+        try (PreparedStatement ps = conn.prepareStatement(
+                "DELETE FROM recurring_pending WHERE rule_client_id=? AND kind='PENDING'")) {
+            ps.setString(1, clientId);
+            ps.executeUpdate();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public List<RecurringPending> listRecurringPending() {
+        return query("SELECT * FROM recurring_pending WHERE kind='PENDING' ORDER BY date ASC, client_id ASC",
+                DataManager::recurringPending);
+    }
+
+    public RecurringPending findRecurringPending(String clientId) {
+        List<RecurringPending> list = query("SELECT * FROM recurring_pending WHERE client_id=?",
+                List.of(clientId), DataManager::recurringPending);
+        return list.isEmpty() ? null : list.get(0);
+    }
+
+    /**
+     * 按规则推算到今天为止需要生成的待确认项并落库（幂等：同 id 的项不会重复生成）。
+     *
+     * @return 本次新生成的条数
+     */
+    public int materializeRecurring(LocalDate today) {
+        int created = 0;
+        for (RecurringRule rule : listRecurringRules()) {
+            if (!rule.enabled) continue;
+            List<LocalDate> dates = com.personal.accounting.desktop.service.Recurrence.dueDates(rule, today);
+            for (LocalDate date : dates) {
+                String id = com.personal.accounting.desktop.service.Recurrence.occurrenceId(rule, date);
+                if (findRecurringPending(id) != null) {
+                    rule.lastGeneratedDate = date;
+                    continue;
+                }
+                RecurringPending p = new RecurringPending();
+                p.clientId = id;
+                p.ruleClientId = rule.clientId;
+                p.date = date;
+                p.amount = rule.amount;
+                p.type = rule.type;
+                p.categoryClientId = rule.categoryClientId;
+                p.accountClientId = rule.accountClientId;
+                p.note = rule.note;
+                p.kind = "PENDING";
+                p.lastModified = System.currentTimeMillis();
+                upsertRecurringPending(p);
+                rule.lastGeneratedDate = date;
+                created++;
+            }
+            if (!dates.isEmpty()) {
+                // 只推进生成水位，不改动 last_modified（不算用户修改，避免与同步打架）
+                upsertRecurringRule(rule);
+            }
+        }
+        return created;
+    }
+
+    public void upsertRecurringPending(RecurringPending p) {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "MERGE INTO recurring_pending (client_id,rule_client_id,date,amount,txn_type,"
+                        + "category_client_id,account_client_id,note,kind,last_modified) "
+                        + "KEY(client_id) VALUES(?,?,?,?,?,?,?,?,?,?)")) {
+            ps.setString(1, p.clientId);
+            ps.setString(2, p.ruleClientId);
+            ps.setDate(3, java.sql.Date.valueOf(p.date));
+            ps.setBigDecimal(4, p.amount == null ? BigDecimal.ZERO : p.amount);
+            ps.setString(5, p.type);
+            ps.setString(6, p.categoryClientId);
+            ps.setString(7, p.accountClientId);
+            ps.setString(8, p.note);
+            ps.setString(9, p.kind == null ? "PENDING" : p.kind);
+            ps.setLong(10, p.lastModified);
+            ps.executeUpdate();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * 确认待确认项：写入一条流水并把该项标记为 ACCEPTED。
+     * 流水 clientId 就是待确认项 id（{@code rr-<规则id前8位>-<yyyyMMdd>}），
+     * 因此两台设备各自确认同一期也不会产生重复流水。
+     */
+    public String confirmRecurring(String pendingClientId, BigDecimal amountOverride) {
+        RecurringPending p = findRecurringPending(pendingClientId);
+        if (p == null) return null;
+        Transaction t = new Transaction();
+        t.clientId = p.clientId;
+        t.date = p.date;
+        t.amount = amountOverride == null ? p.amount : amountOverride;
+        t.type = p.type;
+        t.categoryClientId = p.categoryClientId;
+        t.accountClientId = p.accountClientId;
+        t.note = (p.note == null || p.note.isBlank()) ? "周期记账" : p.note;
+        t.source = "RECURRING";
+        t.lastModified = System.currentTimeMillis();
+        t.deleted = false;
+        upsertTransaction(t);
+        markRecurringPending(p.clientId, "ACCEPTED");
+        return p.clientId;
+    }
+
+    public void skipRecurring(String pendingClientId) {
+        markRecurringPending(pendingClientId, "SKIPPED");
+    }
+
+    private void markRecurringPending(String clientId, String kind) {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "UPDATE recurring_pending SET kind=?, last_modified=? WHERE client_id=?")) {
+            ps.setString(1, kind);
+            ps.setLong(2, System.currentTimeMillis());
+            ps.setString(3, clientId);
+            ps.executeUpdate();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static RecurringRule recurringRule(ResultSet rs) throws Exception {
+        RecurringRule r = new RecurringRule();
+        r.clientId = rs.getString("client_id");
+        r.name = rs.getString("name");
+        r.amount = rs.getBigDecimal("amount");
+        r.type = rs.getString("txn_type");
+        r.categoryClientId = rs.getString("category_client_id");
+        r.accountClientId = rs.getString("account_client_id");
+        r.note = rs.getString("note");
+        r.intervalUnit = rs.getString("interval_unit");
+        r.intervalCount = rs.getInt("interval_count");
+        java.sql.Date anchor = rs.getDate("anchor_date");
+        r.anchorDate = anchor == null ? LocalDate.now() : anchor.toLocalDate();
+        java.sql.Date last = rs.getDate("last_generated_date");
+        r.lastGeneratedDate = last == null ? null : last.toLocalDate();
+        r.enabled = rs.getInt("enabled") == 1;
+        r.sortOrder = rs.getInt("sort_order");
+        r.lastModified = rs.getLong("last_modified");
+        r.deleted = rs.getInt("deleted") == 1;
+        return r;
+    }
+
+    private static RecurringPending recurringPending(ResultSet rs) throws Exception {
+        RecurringPending p = new RecurringPending();
+        p.clientId = rs.getString("client_id");
+        p.ruleClientId = rs.getString("rule_client_id");
+        java.sql.Date date = rs.getDate("date");
+        p.date = date == null ? null : date.toLocalDate();
+        p.amount = rs.getBigDecimal("amount");
+        p.type = rs.getString("txn_type");
+        p.categoryClientId = rs.getString("category_client_id");
+        p.accountClientId = rs.getString("account_client_id");
+        p.note = rs.getString("note");
+        p.kind = rs.getString("kind");
+        p.lastModified = rs.getLong("last_modified");
+        return p;
     }
 
     // ---------------- Sync state ----------------

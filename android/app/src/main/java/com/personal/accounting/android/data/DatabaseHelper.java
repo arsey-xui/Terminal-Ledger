@@ -19,7 +19,7 @@ import java.util.Map;
 public class DatabaseHelper extends SQLiteOpenHelper {
 
     private static final String DB_NAME = "accounting.db";
-    private static final int DB_VERSION = 1;
+    private static final int DB_VERSION = 2;
 
     public DatabaseHelper(Context context) {
         super(context, DB_NAME, null, DB_VERSION);
@@ -64,6 +64,34 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
         db.execSQL("CREATE TABLE sync_state (" +
                 "device_id TEXT PRIMARY KEY, last_sync INTEGER NOT NULL DEFAULT 0)");
+
+        createRecurringTables(db);
+    }
+
+    /**
+     * 周期记账（自动续费）相关的两张表：
+     * <ul>
+     *   <li>{@code recurring_rule}：规则本身，参与同步（带 deleted 墓碑）；</li>
+     *   <li>{@code recurring_pending}：到期生成的「待确认项」，只存本机、不参与同步 ——
+     *       同步的只有规则，以及用户确认后生成的那条流水。</li>
+     * </ul>
+     */
+    private void createRecurringTables(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS recurring_rule (" +
+                "client_id TEXT PRIMARY KEY, name TEXT NOT NULL, amount REAL NOT NULL," +
+                "txn_type TEXT NOT NULL, category_client_id TEXT, account_client_id TEXT, note TEXT," +
+                "interval_unit TEXT NOT NULL DEFAULT 'MONTH', interval_count INTEGER NOT NULL DEFAULT 1," +
+                "anchor_date TEXT NOT NULL, last_generated_date TEXT, enabled INTEGER DEFAULT 1," +
+                "sort_order INTEGER DEFAULT 0, last_modified INTEGER NOT NULL," +
+                "deleted INTEGER DEFAULT 0, created_at TEXT, updated_at TEXT)");
+
+        db.execSQL("CREATE TABLE IF NOT EXISTS recurring_pending (" +
+                "client_id TEXT PRIMARY KEY, rule_client_id TEXT NOT NULL, date TEXT NOT NULL," +
+                "amount REAL NOT NULL, txn_type TEXT NOT NULL, category_client_id TEXT," +
+                "account_client_id TEXT, note TEXT, kind TEXT NOT NULL DEFAULT 'PENDING'," +
+                "last_modified INTEGER NOT NULL)");
+
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_rec_pending_kind ON recurring_pending(kind, date)");
     }
 
     /**
@@ -195,7 +223,12 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        // 开发期简单重建；生产建议增量迁移。
+        if (oldVersion == 1 && newVersion >= 2) {
+            // 1 -> 2：只新增周期记账的表，保留既有账本数据
+            createRecurringTables(db);
+            return;
+        }
+        // 其它/未知的结构变更：沿用原来的重建策略（个人记账数据可重新同步）
         onDrop(db);
         onCreate(db);
     }

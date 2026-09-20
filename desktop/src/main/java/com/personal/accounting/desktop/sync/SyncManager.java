@@ -4,6 +4,7 @@ import com.personal.accounting.desktop.data.DataManager;
 import com.personal.accounting.desktop.model.Account;
 import com.personal.accounting.desktop.model.Budget;
 import com.personal.accounting.desktop.model.Category;
+import com.personal.accounting.desktop.model.RecurringRule;
 import com.personal.accounting.desktop.model.Template;
 import com.personal.accounting.desktop.model.Transaction;
 
@@ -33,6 +34,7 @@ public class SyncManager {
         push.categories.addAll(db.listCategoriesModifiedSince(0));
         push.budgets.addAll(db.listAllBudgetsModifiedSince(0));
         push.templates.addAll(db.listTemplatesModifiedSince(0));
+        push.recurringRules.addAll(db.listRecurringRulesModifiedSince(0));
 
         if (!isEmpty(push)) {
             api.post("/api/sync/push", push, SyncPayloads.SyncResult.class);
@@ -50,6 +52,7 @@ public class SyncManager {
             for (Account a : resp.accounts) if (lww(a)) merged++;
             for (Budget b : resp.budgets) if (lww(b)) merged++;
             for (Template t : resp.templates) if (lww(t)) merged++;
+            for (RecurringRule r : resp.recurringRules) if (lww(r)) merged++;
             if (!resp.hasMore || resp.nextCursor == null) break;
             pull.cursor = resp.nextCursor;
         }
@@ -59,7 +62,7 @@ public class SyncManager {
 
     private boolean isEmpty(SyncPayloads.PushRequest p) {
         return p.transactions.isEmpty() && p.accounts.isEmpty() && p.categories.isEmpty()
-                && p.budgets.isEmpty() && p.templates.isEmpty();
+                && p.budgets.isEmpty() && p.templates.isEmpty() && p.recurringRules.isEmpty();
     }
 
     // ---- LWW 合并 ----
@@ -99,6 +102,13 @@ public class SyncManager {
 
     private boolean lww(Template t) {
         db.upsertTemplate(t);
+        return true;
+    }
+
+    private boolean lww(RecurringRule r) {
+        RecurringRule ex = db.findRecurringRule(r.clientId);
+        if (ex != null && ex.lastModified > r.lastModified) return false;
+        db.upsertRecurringRule(r);
         return true;
     }
 }

@@ -9,6 +9,7 @@ import androidx.fragment.app.Fragment;
 
 import com.google.android.material.bottomnavigation.BottomNavigationView;
 import com.personal.accounting.android.R;
+import com.personal.accounting.android.data.RecurringRepo;
 import com.personal.accounting.android.sync.SyncConfig;
 
 /** 主界面：底部 Tab = 记账 / 报表 / 设置，默认进入记账。 */
@@ -22,6 +23,13 @@ public class MainActivity extends AppCompatActivity {
         // 恢复用户在“设置”里填写的后端地址，保证 release 包可改服务器
         SharedPreferences sp = getSharedPreferences("sync_prefs", Context.MODE_PRIVATE);
         SyncConfig.BASE_URL = sp.getString("base_url", SyncConfig.BASE_URL);
+
+        // 周期记账：每次打开应用把到期的规则生成「待确认项」（幂等，不会重复生成）
+        try {
+            new RecurringRepo(this).materialize(java.time.LocalDate.now());
+        } catch (Exception ignore) {
+            // 生成失败不影响记账主流程
+        }
 
         BottomNavigationView nav = findViewById(R.id.bottom_nav);
         nav.setOnItemSelectedListener(item -> {
