@@ -14,7 +14,7 @@ public class AccountRepo {
     private final DatabaseHelper helper;
 
     public AccountRepo(Context context) {
-        helper = new DatabaseHelper(context);
+        helper = DatabaseHelper.getInstance(context);
     }
 
     private SQLiteDatabase rw() {
@@ -37,6 +37,8 @@ public class AccountRepo {
     }
 
     public Account find(String clientId) {
+        // 同 CategoryRepo.find：空值不能进 selectionArgs，否则 bindString 抛异常。
+        if (clientId == null) return null;
         try (Cursor c = rw().query("accounts", null, "client_id=?", new String[]{clientId}, null, null, null)) {
             return c.moveToFirst() ? fromCursor(c) : null;
         }
@@ -89,16 +91,16 @@ public class AccountRepo {
 
     private Account fromCursor(Cursor c) {
         Account x = new Account();
-        x.clientId = c.getString(0);
-        x.name = c.getString(1);
-        x.type = c.getString(2);
-        x.icon = c.getString(3);
-        x.initialBalance = c.getDouble(4);
-        x.sortOrder = c.getInt(5);
-        x.lastModified = c.getLong(6);
-        x.deleted = c.getInt(7) == 1;
-        x.createdAt = c.getString(8);
-        x.updatedAt = c.getString(9);
+        x.clientId = c.getString(c.getColumnIndexOrThrow("client_id"));
+        x.name = c.getString(c.getColumnIndexOrThrow("name"));
+        x.type = c.getString(c.getColumnIndexOrThrow("type"));
+        x.icon = c.getString(c.getColumnIndexOrThrow("icon"));
+        x.initialBalance = c.getDouble(c.getColumnIndexOrThrow("initial_balance"));
+        x.sortOrder = c.getInt(c.getColumnIndexOrThrow("sort_order"));
+        x.lastModified = c.getLong(c.getColumnIndexOrThrow("last_modified"));
+        x.deleted = c.getInt(c.getColumnIndexOrThrow("deleted")) == 1;
+        x.createdAt = Timestamps.toIso(c.getString(c.getColumnIndexOrThrow("created_at")));
+        x.updatedAt = Timestamps.toIso(c.getString(c.getColumnIndexOrThrow("updated_at")));
         return x;
     }
 }

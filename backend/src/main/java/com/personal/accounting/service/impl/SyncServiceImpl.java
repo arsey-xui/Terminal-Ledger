@@ -95,6 +95,7 @@ public class SyncServiceImpl implements SyncService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public SyncPullResponse pull(SyncPullRequest request) {
         long since = request.getSince() == null ? 0L : request.getSince();
         boolean fullSync = since == 0L;
@@ -107,6 +108,7 @@ public class SyncServiceImpl implements SyncService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public SyncPullResponse pullWindow(SyncPullRequest request) {
         long from = request.getSince() == null ? 0L : request.getSince();
         long until = request.getUntil() == null ? now() : request.getUntil();
@@ -305,20 +307,6 @@ public class SyncServiceImpl implements SyncService {
 
     private static long now() {
         return System.currentTimeMillis();
-    }
-
-    private static void ensureId(BaseEntity entity) {
-        if (entity.getClientId() == null || entity.getClientId().isBlank()) {
-            entity.setClientId(UUID.randomUUID().toString());
-        }
-        if (entity.getLastModified() == null) {
-            entity.setLastModified(System.currentTimeMillis());
-        }
-        if (entity.getDeleted() == null) {
-            entity.setDeleted(false);
-        }
-        entity.setCreatedAt(entity.getCreatedAt() == null ? LocalDateTime.now() : entity.getCreatedAt());
-        entity.setUpdatedAt(LocalDateTime.now());
     }
 
     private void copy(AccountDto dto, Account a) {

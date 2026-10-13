@@ -21,6 +21,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class OpenAiCompatibleClient implements LlmClient {
 
+    private static final RestTemplate REST_TEMPLATE = new RestTemplate();
     private final AiProperties props;
 
     @Override
@@ -33,7 +34,6 @@ public class OpenAiCompatibleClient implements LlmClient {
         if (apiKey == null || apiKey.isBlank()) {
             throw new UnsupportedOperationException("AI_API_KEY 未配置");
         }
-        RestTemplate rest = new RestTemplate();
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setBearerAuth(apiKey);
@@ -45,7 +45,7 @@ public class OpenAiCompatibleClient implements LlmClient {
                         Map.of("role", "user", "content", user)),
                 "temperature", 0.4);
 
-        ResponseEntity<Map> resp = rest.postForEntity(baseUrl + "/chat/completions",
+        ResponseEntity<Map> resp = REST_TEMPLATE.postForEntity(baseUrl + "/chat/completions",
                 new HttpEntity<>(body, headers), Map.class);
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> choices = (List<Map<String, Object>>) resp.getBody().get("choices");

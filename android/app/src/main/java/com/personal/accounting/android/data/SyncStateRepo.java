@@ -9,7 +9,7 @@ public class SyncStateRepo {
     private final DatabaseHelper helper;
 
     public SyncStateRepo(Context context) {
-        helper = new DatabaseHelper(context);
+        helper = DatabaseHelper.getInstance(context);
     }
 
     private SQLiteDatabase rw() {

@@ -2,6 +2,7 @@ package com.personal.accounting.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -13,7 +14,9 @@ import java.math.BigDecimal;
  * 记账模板：保存常用组合（如「每月房贷」），一键填充表单。
  */
 @Entity
-@Table(name = "template")
+@Table(name = "template", indexes = {
+        @Index(name = "idx_template_last_modified", columnList = "last_modified")
+})
 @Getter
 @Setter
 @NoArgsConstructor

@@ -5,6 +5,7 @@ import com.personal.accounting.dto.BudgetDto;
 import com.personal.accounting.entity.Budget;
 import com.personal.accounting.repository.BudgetRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
@@ -18,6 +19,7 @@ public class BudgetController {
     private final BudgetRepository repository;
 
     /** 按 (categoryClientId, year, month) 唯一键做 upsert。 */
+    @Transactional
     @PostMapping
     public ApiResponse<BudgetDto> upsert(@RequestBody BudgetDto dto) {
         Budget b = repository.findByCategoryClientIdAndYearAndMonth(
@@ -39,6 +41,7 @@ public class BudgetController {
         return ApiResponse.ok(BudgetDto.from(b), "已保存");
     }
 
+    @Transactional
     @DeleteMapping("/{clientId}")
     public ApiResponse<Void> delete(@PathVariable String clientId) {
         repository.findByClientId(clientId).ifPresent(b -> {

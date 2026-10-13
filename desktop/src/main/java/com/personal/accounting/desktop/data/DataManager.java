@@ -17,7 +17,9 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 桌面端本地缓存（H2 嵌入式，文件模式）。表结构与云端 MySQL 保持同构。
@@ -112,7 +114,7 @@ public class DataManager implements AutoCloseable {
      * 重置分类为初次安装状态：软删除全部分类（含自建），再恢复内置默认分类。
      * 只影响分类表，流水记录保持不动（历史流水会显示为"未分类"）。
      */
-    public void resetCategories() throws Exception {
+    public synchronized void resetCategories() throws Exception {
         long now = System.currentTimeMillis();
         try (PreparedStatement ps = conn.prepareStatement(
                 "UPDATE category SET deleted=1, last_modified=? WHERE deleted=0")) {
@@ -124,7 +126,7 @@ public class DataManager implements AutoCloseable {
     }
 
     /** 重置账户为初次安装状态：软删除全部账户（含自建），再恢复内置默认账户。流水不动。 */
-    public void resetAccounts() throws Exception {
+    public synchronized void resetAccounts() throws Exception {
         long now = System.currentTimeMillis();
         try (PreparedStatement ps = conn.prepareStatement(
                 "UPDATE accounts SET deleted=1, last_modified=? WHERE deleted=0")) {
@@ -135,7 +137,7 @@ public class DataManager implements AutoCloseable {
     }
 
     /** 清空全部预算上限，回到"所有分类都未设置上限"的状态。 */
-    public void resetBudgets() throws Exception {
+    public synchronized void resetBudgets() throws Exception {
         try (PreparedStatement ps = conn.prepareStatement(
                 "UPDATE budget SET deleted=1, last_modified=? WHERE deleted=0")) {
             ps.setLong(1, System.currentTimeMillis());
@@ -207,7 +209,7 @@ public class DataManager implements AutoCloseable {
     }
 
     // ---------------- Account ----------------
-    public void upsertAccount(Account a) {
+    public synchronized void upsertAccount(Account a) {
         try (PreparedStatement ps = conn.prepareStatement(
                 "MERGE INTO accounts (client_id,name,type,icon,initial_balance,sort_order,last_modified,deleted,created_at,updated_at) KEY(client_id) VALUES(?,?,?,?,?,?,?,?,?,?)")) {
             ps.setString(1, a.clientId);
@@ -226,7 +228,7 @@ public class DataManager implements AutoCloseable {
         }
     }
 
-    public Account findAccount(String clientId) {
+    public synchronized Account findAccount(String clientId) {
         try (PreparedStatement ps = conn.prepareStatement("SELECT * FROM accounts WHERE client_id=?")) {
             ps.setString(1, clientId);
             try (ResultSet rs = ps.executeQuery()) {
@@ -237,12 +239,12 @@ public class DataManager implements AutoCloseable {
         }
     }
 
-    public List<Account> listAccounts() {
+    public synchronized List<Account> listAccounts() {
         return query("SELECT * FROM accounts WHERE deleted=0 ORDER BY sort_order", rs -> account(rs));
     }
 
     /** 软删除账户：置 deleted=1 并刷新 last_modified，保证删除能被同步。 */
-    public void deleteAccount(String clientId) {
+    public synchronized void deleteAccount(String clientId) {
         Account a = findAccount(clientId);
         if (a == null) return;
         a.deleted = true;
@@ -251,7 +253,7 @@ public class DataManager implements AutoCloseable {
     }
 
     // ---------------- Category ----------------
-    public void upsertCategory(Category c) {
+    public synchronized void upsertCategory(Category c) {
         try (PreparedStatement ps = conn.prepareStatement(
                 "MERGE INTO category (client_id,name,type,icon,sort_order,last_modified,deleted,created_at,updated_at) KEY(client_id) VALUES(?,?,?,?,?,?,?,?,?)")) {
             ps.setString(1, c.clientId);
@@ -269,7 +271,7 @@ public class DataManager implements AutoCloseable {
         }
     }
 
-    public List<Category> listCategories(String type) {
+    public synchronized List<Category> listCategories(String type) {
         try (PreparedStatement ps = conn.prepareStatement(
                 "SELECT * FROM category WHERE deleted=0 AND type=? ORDER BY sort_order")) {
             ps.setString(1, type);
@@ -283,7 +285,7 @@ public class DataManager implements AutoCloseable {
         }
     }
 
-    public Category findCategory(String clientId) {
+    public synchronized Category findCategory(String clientId) {
         try (PreparedStatement ps = conn.prepareStatement("SELECT * FROM category WHERE client_id=?")) {
             ps.setString(1, clientId);
             try (ResultSet rs = ps.executeQuery()) {
@@ -295,7 +297,7 @@ public class DataManager implements AutoCloseable {
     }
 
     /** 软删除分类：置 deleted=1 并刷新 last_modified，保证删除能被同步。 */
-    public void deleteCategory(String clientId) {
+    public synchronized void deleteCategory(String clientId) {
         Category c = findCategory(clientId);
         if (c == null) return;
         c.deleted = true;
@@ -303,8 +305,20 @@ public class DataManager implements AutoCloseable {
         upsertCategory(c);
     }
 
+    public synchronized String categoryName(String clientId) {
+        if (clientId == null) return "未分类";
+        Category c = findCategory(clientId);
+        return c == null ? "未分类" : c.name;
+    }
+
+    public synchronized String accountName(String clientId) {
+        if (clientId == null) return "";
+        Account a = findAccount(clientId);
+        return a == null ? "" : a.name;
+    }
+
     /** 该分类下未删除的流水条数，用于删除前提示影响范围。 */
-    public int countTransactionsByCategory(String categoryClientId) {
+    public synchronized int countTransactionsByCategory(String categoryClientId) {
         try (PreparedStatement ps = conn.prepareStatement(
                 "SELECT COUNT(*) FROM transaction_record WHERE deleted=0 AND category_client_id=?")) {
             ps.setString(1, categoryClientId);
@@ -316,8 +330,24 @@ public class DataManager implements AutoCloseable {
         }
     }
 
+    /**
+      * 未删除的流水总条数。
+      *
+      * <p>给「一条流水都还没有」这类判断用：不依赖「首次使用」标记，
+      * 用户记完第一笔就自然不再是这个状态。</p>
+      */
+    public synchronized int countTransactions() {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT COUNT(*) FROM transaction_record WHERE deleted=0");
+             ResultSet rs = ps.executeQuery()) {
+            return rs.next() ? rs.getInt(1) : 0;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     // ---------------- Transaction ----------------
-    public void upsertTransaction(Transaction t) {
+    public synchronized void upsertTransaction(Transaction t) {
         try (PreparedStatement ps = conn.prepareStatement(
                 "MERGE INTO transaction_record (client_id,date,amount,type,category_client_id,account_client_id,note,photo_path,source,last_modified,deleted,created_at,updated_at) KEY(client_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)")) {
             ps.setString(1, t.clientId);
@@ -339,7 +369,7 @@ public class DataManager implements AutoCloseable {
         }
     }
 
-    public List<Transaction> listTransactions(LocalDate from, LocalDate to, String categoryClientId, String keyword) {
+    public synchronized List<Transaction> listTransactions(LocalDate from, LocalDate to, String categoryClientId, String keyword) {
         StringBuilder sql = new StringBuilder("SELECT * FROM transaction_record WHERE deleted=0");
         List<Object> args = new ArrayList<>();
         if (from != null) {
@@ -363,49 +393,91 @@ public class DataManager implements AutoCloseable {
         return query(sql.toString(), args, rs -> transaction(rs));
     }
 
-    public List<Transaction> listModifiedSince(long since) {
+    public synchronized Transaction findTransactionByClientId(String clientId) {
+        return query("SELECT * FROM transaction_record WHERE client_id=?",
+                List.of(clientId), DataManager::transaction).stream().findFirst().orElse(null);
+    }
+
+    /**
+     * 按「年-月」聚合的收入/支出，用于跨月趋势。
+     *
+     * <p>一次查询拿完整个区间（不是逐月调 listTransactions 再求和）。返回的 key 形如
+     * {@code 2026-09}，value 是 {@code [收入, 支出]}，与手机端
+     * {@code TransactionRepo.monthlyTotals} 同口径。</p>
+     *
+     * @param categoryClientId 传 null 表示不限分类
+     */
+    public synchronized Map<String, BigDecimal[]> monthlyTotals(LocalDate from, LocalDate to, String categoryClientId) {
+        StringBuilder sql = new StringBuilder(
+                "SELECT FORMATDATETIME(date, 'yyyy-MM') AS ym,"
+                        + " COALESCE(SUM(CASE WHEN type='INCOME' THEN amount ELSE 0 END), 0) AS income,"
+                        + " COALESCE(SUM(CASE WHEN type='EXPENSE' THEN amount ELSE 0 END), 0) AS expense"
+                        + " FROM transaction_record WHERE deleted=0 AND date>=? AND date<=?");
+        List<Object> args = new ArrayList<>();
+        args.add(java.sql.Date.valueOf(from));
+        args.add(java.sql.Date.valueOf(to));
+        if (categoryClientId != null && !categoryClientId.isBlank()) {
+            sql.append(" AND category_client_id=?");
+            args.add(categoryClientId);
+        }
+        sql.append(" GROUP BY ym");
+
+        List<Object[]> rows = query(sql.toString(), args, rs ->
+                new Object[]{rs.getString("ym"), rs.getBigDecimal("income"), rs.getBigDecimal("expense")});
+        Map<String, BigDecimal[]> totals = new LinkedHashMap<>();
+        for (Object[] row : rows) {
+            BigDecimal income = (BigDecimal) row[1];
+            BigDecimal expense = (BigDecimal) row[2];
+            totals.put((String) row[0], new BigDecimal[]{
+                    income == null ? BigDecimal.ZERO : income,
+                    expense == null ? BigDecimal.ZERO : expense});
+        }
+        return totals;
+    }
+
+    public synchronized List<Transaction> listModifiedSince(long since) {
         return query("SELECT * FROM transaction_record WHERE last_modified>? ORDER BY last_modified",
                 List.of(since), rs -> transaction(rs));
     }
 
     /** 自 last_modified > since 的全部账户（含删除墓碑）。 */
-    public List<Account> listAccountsModifiedSince(long since) {
+    public synchronized List<Account> listAccountsModifiedSince(long since) {
         return query("SELECT * FROM accounts WHERE last_modified>? ORDER BY last_modified",
                 List.of(since), rs -> account(rs));
     }
 
     /** 自 last_modified > since 的全部分类（含删除墓碑）。 */
-    public List<Category> listCategoriesModifiedSince(long since) {
+    public synchronized List<Category> listCategoriesModifiedSince(long since) {
         return query("SELECT * FROM category WHERE last_modified>? ORDER BY last_modified",
                 List.of(since), rs -> category(rs));
     }
 
     /** 自 last_modified > since 的全部预算（含删除墓碑）。 */
-    public List<Budget> listAllBudgetsModifiedSince(long since) {
+    public synchronized List<Budget> listAllBudgetsModifiedSince(long since) {
         return query("SELECT * FROM budget WHERE last_modified>? ORDER BY last_modified",
                 List.of(since), rs -> budget(rs));
     }
 
     /** 自 last_modified > since 的全部模板（含删除墓碑）。 */
-    public List<Template> listTemplatesModifiedSince(long since) {
+    public synchronized List<Template> listTemplatesModifiedSince(long since) {
         return query("SELECT * FROM template WHERE last_modified>? ORDER BY last_modified",
                 List.of(since), rs -> template(rs));
     }
 
     /** 软删除流水：置 deleted=1 并刷新 last_modified，删除可被同步为墓碑。 */
-    public void deleteTransaction(String clientId) {
-        for (Transaction t : listTransactions(null, null, null, null)) {
-            if (t.clientId.equals(clientId)) {
-                t.deleted = true;
-                t.lastModified = System.currentTimeMillis();
-                upsertTransaction(t);
-                return;
-            }
+    public synchronized void deleteTransaction(String clientId) {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "UPDATE transaction_record SET deleted=1, last_modified=? WHERE client_id=?")) {
+            ps.setLong(1, System.currentTimeMillis());
+            ps.setString(2, clientId);
+            ps.executeUpdate();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
 
     // ---------------- Budget ----------------
-    public Budget findBudget(String categoryClientId, int year, int month) {
+    public synchronized Budget findBudget(String categoryClientId, int year, int month) {
         try (PreparedStatement ps = conn.prepareStatement(
                 "SELECT * FROM budget WHERE category_client_id=? AND budget_year=? AND budget_month=?")) {
             ps.setString(1, categoryClientId);
@@ -419,7 +491,7 @@ public class DataManager implements AutoCloseable {
         }
     }
 
-    public void upsertBudget(Budget b) {
+    public synchronized void upsertBudget(Budget b) {
         try (PreparedStatement ps = conn.prepareStatement(
                 "MERGE INTO budget (client_id,category_client_id,budget_year,budget_month,amount_limit,last_modified,deleted,created_at,updated_at) KEY(client_id) VALUES(?,?,?,?,?,?,?,?,?)")) {
             ps.setString(1, b.clientId);
@@ -437,17 +509,17 @@ public class DataManager implements AutoCloseable {
         }
     }
 
-    public List<Budget> listBudgets(int year, int month) {
+    public synchronized List<Budget> listBudgets(int year, int month) {
         return query("SELECT * FROM budget WHERE deleted=0 AND budget_year=? AND budget_month=?",
                 List.of(year, month), rs -> budget(rs));
     }
 
-    public List<Budget> listAllBudgets() {
+    public synchronized List<Budget> listAllBudgets() {
         return query("SELECT * FROM budget WHERE deleted=0", rs -> budget(rs));
     }
 
     // ---------------- Template ----------------
-    public void upsertTemplate(Template t) {
+    public synchronized void upsertTemplate(Template t) {
         try (PreparedStatement ps = conn.prepareStatement(
                 "MERGE INTO template (client_id,name,amount,type,category_client_id,account_client_id,note,sort_order,last_modified,deleted,created_at,updated_at) KEY(client_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)")) {
             ps.setString(1, t.clientId);
@@ -471,12 +543,12 @@ public class DataManager implements AutoCloseable {
     // ---------------- 周期记账（自动续费） ----------------
 
     /** 未删除的周期规则。 */
-    public List<RecurringRule> listRecurringRules() {
+    public synchronized List<RecurringRule> listRecurringRules() {
         return query("SELECT * FROM recurring_rule WHERE deleted=0 ORDER BY sort_order ASC, client_id ASC",
                 DataManager::recurringRule);
     }
 
-    public RecurringRule findRecurringRule(String clientId) {
+    public synchronized RecurringRule findRecurringRule(String clientId) {
         if (clientId == null) return null;
         List<RecurringRule> list = query("SELECT * FROM recurring_rule WHERE client_id=?",
                 List.of(clientId), DataManager::recurringRule);
@@ -484,13 +556,13 @@ public class DataManager implements AutoCloseable {
     }
 
     /** 含删除墓碑的规则（同步用）。 */
-    public List<RecurringRule> listRecurringRulesModifiedSince(long since) {
+    public synchronized List<RecurringRule> listRecurringRulesModifiedSince(long since) {
         return query("SELECT * FROM recurring_rule WHERE last_modified > ?",
                 List.of(since), DataManager::recurringRule);
     }
 
     /** 保存规则；last_modified 刷新为当前时间（用户操作）。 */
-    public void saveRecurringRule(RecurringRule r) {
+    public synchronized void saveRecurringRule(RecurringRule r) {
         if (r.clientId == null || r.clientId.isBlank()) {
             r.clientId = java.util.UUID.randomUUID().toString();
         }
@@ -499,7 +571,7 @@ public class DataManager implements AutoCloseable {
     }
 
     /** MERGE 写入（含同步下行的数据），保留 createdAt/updatedAt 为 null。 */
-    public void upsertRecurringRule(RecurringRule r) {
+    public synchronized void upsertRecurringRule(RecurringRule r) {
         try (PreparedStatement ps = conn.prepareStatement(
                 "MERGE INTO recurring_rule (client_id,name,amount,txn_type,category_client_id,"
                         + "account_client_id,note,interval_unit,interval_count,anchor_date,"
@@ -529,7 +601,7 @@ public class DataManager implements AutoCloseable {
     }
 
     /** 软删除规则，并清掉它尚未确认的待确认项。 */
-    public void deleteRecurringRule(String clientId) {
+    public synchronized void deleteRecurringRule(String clientId) {
         RecurringRule r = findRecurringRule(clientId);
         if (r == null) return;
         r.deleted = true;
@@ -544,12 +616,12 @@ public class DataManager implements AutoCloseable {
         }
     }
 
-    public List<RecurringPending> listRecurringPending() {
+    public synchronized List<RecurringPending> listRecurringPending() {
         return query("SELECT * FROM recurring_pending WHERE kind='PENDING' ORDER BY date ASC, client_id ASC",
                 DataManager::recurringPending);
     }
 
-    public RecurringPending findRecurringPending(String clientId) {
+    public synchronized RecurringPending findRecurringPending(String clientId) {
         List<RecurringPending> list = query("SELECT * FROM recurring_pending WHERE client_id=?",
                 List.of(clientId), DataManager::recurringPending);
         return list.isEmpty() ? null : list.get(0);
@@ -560,7 +632,7 @@ public class DataManager implements AutoCloseable {
      *
      * @return 本次新生成的条数
      */
-    public int materializeRecurring(LocalDate today) {
+    public synchronized int materializeRecurring(LocalDate today) {
         int created = 0;
         for (RecurringRule rule : listRecurringRules()) {
             if (!rule.enabled) continue;
@@ -594,7 +666,7 @@ public class DataManager implements AutoCloseable {
         return created;
     }
 
-    public void upsertRecurringPending(RecurringPending p) {
+    public synchronized void upsertRecurringPending(RecurringPending p) {
         try (PreparedStatement ps = conn.prepareStatement(
                 "MERGE INTO recurring_pending (client_id,rule_client_id,date,amount,txn_type,"
                         + "category_client_id,account_client_id,note,kind,last_modified) "
@@ -620,7 +692,7 @@ public class DataManager implements AutoCloseable {
      * 流水 clientId 就是待确认项 id（{@code rr-<规则id前8位>-<yyyyMMdd>}），
      * 因此两台设备各自确认同一期也不会产生重复流水。
      */
-    public String confirmRecurring(String pendingClientId, BigDecimal amountOverride) {
+    public synchronized String confirmRecurring(String pendingClientId, BigDecimal amountOverride) {
         RecurringPending p = findRecurringPending(pendingClientId);
         if (p == null) return null;
         Transaction t = new Transaction();
@@ -639,7 +711,7 @@ public class DataManager implements AutoCloseable {
         return p.clientId;
     }
 
-    public void skipRecurring(String pendingClientId) {
+    public synchronized void skipRecurring(String pendingClientId) {
         markRecurringPending(pendingClientId, "SKIPPED");
     }
 
@@ -694,7 +766,7 @@ public class DataManager implements AutoCloseable {
     }
 
     // ---------------- Sync state ----------------
-    public long lastSync(String deviceId) {
+    public synchronized long lastSync(String deviceId) {
         try (PreparedStatement ps = conn.prepareStatement("SELECT last_sync FROM sync_state WHERE device_id=?")) {
             ps.setString(1, deviceId);
             try (ResultSet rs = ps.executeQuery()) {
@@ -705,7 +777,7 @@ public class DataManager implements AutoCloseable {
         }
     }
 
-    public void saveLastSync(String deviceId, long ts) {
+    public synchronized void saveLastSync(String deviceId, long ts) {
         try (PreparedStatement ps = conn.prepareStatement(
                 "MERGE INTO sync_state (device_id,last_sync) KEY(device_id) VALUES(?,?)")) {
             ps.setString(1, deviceId);
@@ -807,7 +879,7 @@ public class DataManager implements AutoCloseable {
         return t;
     }
 
-    public void close() {
+    public synchronized void close() {
         try {
             if (conn != null) conn.close();
         } catch (Exception ignore) {

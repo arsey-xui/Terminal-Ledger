@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  饼图/环图调色板（浅色基底）。
+  六个扇区颜色按「占比从大到小」依次取用，所以靠前的颜色会出现在最大的扇区上：
+  大扇区放浅色（黑字金额可读），深色只在占比小、标签走外置引线的位置出现。
+-->
+<resources>
+    <!--
+      顺序按「明度从高到低」：占比最大的扇区拿到最亮的颜色（配深字可读），
+      最暗的两个放到最后，只会出现在占比很小、标签走环外引线的扇区上。
+    -->
+    <array name="pie_palette">
+        <item>@color/primary</item>
+        <item>@color/chart_grid</item>
+        <item>@color/text_secondary</item>
+        <item>@color/expense</item>
+        <item>@color/chart_text</item>
+        <item>@color/primary_dark</item>
+    </array>
+</resources>

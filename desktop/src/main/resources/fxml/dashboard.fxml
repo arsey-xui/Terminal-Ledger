@@ -35,10 +35,10 @@
             <VBox spacing="16" styleClass="area">
                 <HBox spacing="16">
                     <VBox styleClass="panel">
-                        <Label text="支出构成" styleClass="h2"/>
+                        <Label text="支出构成（本月）" styleClass="h2"/>
                         <StackPane>
                             <PieChart fx:id="pie" prefHeight="220"/>
-                            <Label fx:id="pieEmpty" text="暂无数据" styleClass="empty-state" visible="false"/>
+                            <Label fx:id="pieEmpty" text="本月还没有支出记录&#10;记一笔就会出现在这里" styleClass="empty-state" visible="false"/>
                         </StackPane>
                     </VBox>
                     <VBox styleClass="panel">
@@ -52,22 +52,37 @@
                                     <NumberAxis/>
                                 </yAxis>
                             </LineChart>
-                            <Label fx:id="lineEmpty" text="暂无数据" styleClass="empty-state" visible="false"/>
+                            <Label fx:id="lineEmpty" text="最近 30 天还没有支出记录&#10;记一笔就会出现在这里" styleClass="empty-state" visible="false"/>
                         </StackPane>
                     </VBox>
                 </HBox>
                 <VBox styleClass="panel">
+                    <Label text="跨月趋势（近 6 个月）" styleClass="h2"/>
+                    <ComboBox fx:id="monthTrendScope"/>
+                    <StackPane>
+                        <BarChart fx:id="monthTrend" prefHeight="220">
+                            <xAxis>
+                                <CategoryAxis/>
+                            </xAxis>
+                            <yAxis>
+                                <NumberAxis/>
+                            </yAxis>
+                        </BarChart>
+                        <Label fx:id="monthTrendEmpty" text="近半年还没有支出记录&#10;记一笔就会出现在这里" styleClass="empty-state" visible="false"/>
+                    </StackPane>
+                </VBox>
+                <VBox styleClass="panel">
                     <Label text="预算进度" styleClass="h2"/>
                     <StackPane>
                         <VBox fx:id="budgetBox" spacing="6"/>
-                        <Label fx:id="budgetEmpty" text="暂无数据" styleClass="empty-state" visible="false"/>
+                        <Label fx:id="budgetEmpty" text="还没有设预算&#10;在「记账」页给分类设上限后，这里显示进度" styleClass="empty-state" visible="false"/>
                     </StackPane>
                 </VBox>
                 <VBox styleClass="panel">
                     <Label text="年度日历热力图" styleClass="h2"/>
                     <StackPane>
                         <GridPane fx:id="heatmap" hgap="2" vgap="2"/>
-                        <Label fx:id="heatEmpty" text="暂无数据" styleClass="empty-state" visible="false"/>
+                        <Label fx:id="heatEmpty" text="今年还没有支出记录&#10;记一笔就会出现在这里" styleClass="empty-state" visible="false"/>
                     </StackPane>
                 </VBox>
                 <VBox styleClass="panel">

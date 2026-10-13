@@ -26,6 +26,7 @@ import com.personal.accounting.android.model.Category;
 import java.text.DecimalFormat;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /** 预算管理：为每个支出分类设置当月上限，并显示已用/进度（超 90% 黄、超 100% 红）。 */
@@ -79,9 +80,10 @@ public class BudgetFragment extends Fragment {
     private void rebuildRows() {
         container.removeAllViews();
         List<Category> cats = catRepo.listExpense();
+        Map<String, Double> expenseMap = txRepo.categoryExpenseMap(year, month);
         for (Category c : cats) {
             View row = LayoutInflater.from(requireContext()).inflate(R.layout.item_budget_row, container, false);
-            bindRow(row, c);
+            bindRow(row, c, expenseMap.getOrDefault(c.clientId, 0.0));
             container.addView(row);
         }
         if (cats.isEmpty()) {
@@ -91,7 +93,7 @@ public class BudgetFragment extends Fragment {
         }
     }
 
-    private void bindRow(View row, Category cat) {
+    private void bindRow(View row, Category cat, double used) {
         TextView catLabel = row.findViewById(R.id.budget_cat);
         EditText limitEdit = row.findViewById(R.id.budget_limit);
         Button save = row.findViewById(R.id.budget_save);
@@ -102,7 +104,6 @@ public class BudgetFragment extends Fragment {
 
         // 用 findActiveByKey：软删除（墓碑）的预算不算已设置上限，显示“未设置上限”
         Budget existing = budgetRepo.findActiveByKey(cat.clientId, year, month);
-        double used = txRepo.categoryExpense(cat.clientId, year, month);
         double limit = 0;
         if (existing != null) {
             limit = existing.amountLimit;
@@ -143,14 +144,15 @@ public class BudgetFragment extends Fragment {
     private void updateProgress(TextView tv, double used, double limit) {
         if (limit <= 0) {
             tv.setText("本月已用 " + MONEY.format(used) + "（未设置上限）");
-            tv.setTextColor(0xFF888888);
+            tv.setTextColor(ChartColors.of(requireContext(), R.color.text_secondary));
             return;
         }
         double pct = used / limit * 100;
         String badge = pct >= 100 ? String.format("%.0f%%", pct) : String.format("%.1f%%", pct);
         tv.setText("本月已用 " + MONEY.format(used) + " / " + MONEY.format(limit) + "（" + badge + "）");
-        if (pct >= 100) tv.setTextColor(0xFFE53935);
-        else if (pct >= 90) tv.setTextColor(0xFFF9A825);
-        else tv.setTextColor(0xFF2E7D32);
+        // 三档状态色走资源，深色模式下自动换成提亮版本
+        if (pct >= 100) tv.setTextColor(ChartColors.of(requireContext(), R.color.expense));
+        else if (pct >= 90) tv.setTextColor(ChartColors.of(requireContext(), R.color.warning));
+        else tv.setTextColor(ChartColors.of(requireContext(), R.color.income));
     }
 }

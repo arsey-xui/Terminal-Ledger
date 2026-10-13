@@ -13,6 +13,7 @@ import com.personal.accounting.android.model.Budget;
 import com.personal.accounting.android.model.Category;
 import com.personal.accounting.android.model.Transaction;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -37,12 +38,20 @@ public final class AiAnalysis {
     public static final String ENGINE_LOCAL = "LOCAL";
     public static final String ENGINE_LLM = "LLM";
 
+    /** 默认系统提示词。用户在「AI 设置 → 分析提示词」里填了自己的提示词就改用那一份。 */
+    public static final String DEFAULT_PROMPT =
+            "你是一位个人理财助手。请基于下面的记账汇总数据，用中文写一段简洁、有条理的消费分析，"
+                    + "指出值得关注的点并给出可执行建议；数据里已给出按天统计的日平均支出、日支出标准差与日支出中位数，"
+                    + "请把它们纳入分析（标准差越大说明每天的花费起伏越大），不超过 200 字。";
+
     private static final String PREFS = "ai_prefs";
     private static final String K_DONE = "ai_done";
     private static final String K_USE_LLM = "ai_use_llm";
     private static final String K_KEY = "ai_api_key";
     private static final String K_BASE = "ai_base_url";
     private static final String K_MODEL = "ai_model";
+    /** 自定义分析提示词（明文存放：不是机密，且要能被用户随时看见/改回）。 */
+    private static final String K_PROMPT = "ai_prompt";
     private static final String DEFAULT_BASE = "https://api.openai.com/v1";
     private static final String DEFAULT_MODEL = "gpt-4o-mini";
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
@@ -82,8 +91,18 @@ public final class AiAnalysis {
         return prefs(context).getBoolean(K_USE_LLM, false);
     }
 
+    /**
+     * 读 API Key。落盘时是密文（见 {@link SecretStore}），旧版本留下的明文也能读；
+     * 解不开（换设备、Keystore 失效）就清掉并返回空串，让用户重填一次。
+     */
     public static String apiKey(Context context) {
-        return prefs(context).getString(K_KEY, "");
+        SharedPreferences p = prefs(context);
+        String stored = p.getString(K_KEY, "");
+        if (stored == null || stored.isEmpty()) return "";
+        String plain = SecretStore.decode(stored);
+        if (plain != null) return plain;
+        p.edit().remove(K_KEY).apply();
+        return "";
     }
 
     public static String baseUrl(Context context) {
@@ -94,6 +113,34 @@ public final class AiAnalysis {
         return prefs(context).getString(K_MODEL, DEFAULT_MODEL);
     }
 
+    /** 用户自定义的分析提示词；空串表示用 {@link #DEFAULT_PROMPT}。 */
+    public static String prompt(Context context) {
+        String stored = prefs(context).getString(K_PROMPT, "");
+        return stored == null ? "" : stored;
+    }
+
+    /** 实际生效的提示词：自定义为空时回退默认。 */
+    public static String effectivePrompt(Context context) {
+        String custom = prompt(context).trim();
+        return custom.isEmpty() ? DEFAULT_PROMPT : custom;
+    }
+
+    /** 是否已自定义提示词（设置弹窗用来显示当前状态）。 */
+    public static boolean hasCustomPrompt(Context context) {
+        return !prompt(context).trim().isEmpty();
+    }
+
+    /** 保存自定义提示词；传空白表示恢复默认。 */
+    public static void savePrompt(Context context, String prompt) {
+        String value = prompt == null ? "" : prompt.trim();
+        prefs(context).edit().putString(K_PROMPT, value).apply();
+    }
+
+    /** 恢复默认提示词。 */
+    public static void clearPrompt(Context context) {
+        prefs(context).edit().remove(K_PROMPT).apply();
+    }
+
     /** 是否具备真正调用大模型的条件（用户选了 LLM 且填了 Key）。 */
     public static boolean canUseLlm(Context context) {
         return useLlm(context) && !apiKey(context).trim().isEmpty();
@@ -101,14 +148,21 @@ public final class AiAnalysis {
 
     /** 保存用户配置；未填 Key 时自动退回规则引擎。 */
     public static void save(Context context, String apiKey, String baseUrl, String model) {
+        save(context, apiKey, baseUrl, model, prompt(context));
+    }
+
+    /** 保存用户配置（含自定义提示词）；未填 Key 时自动退回规则引擎。 */
+    public static void save(Context context, String apiKey, String baseUrl, String model, String prompt) {
         String key = apiKey == null ? "" : apiKey.trim();
         boolean llm = !key.isEmpty();
         prefs(context).edit()
                 .putBoolean(K_DONE, true)
                 .putBoolean(K_USE_LLM, llm)
-                .putString(K_KEY, key)
+                // Key 加密后再落盘：Keystore 里的密钥不可导出，换设备也解不开
+                .putString(K_KEY, SecretStore.encode(key))
                 .putString(K_BASE, blankToDefault(baseUrl, DEFAULT_BASE))
                 .putString(K_MODEL, blankToDefault(model, DEFAULT_MODEL))
+                .putString(K_PROMPT, prompt == null ? "" : prompt.trim())
                 .apply();
     }
 
@@ -139,9 +193,9 @@ public final class AiAnalysis {
             return new Result(rules, ENGINE_LOCAL, null);
         }
         try {
+            // 规则正文（含日平均 / 日标准差 / 日中位数）就是大模型的上下文，模型不用自己算
             String text = LlmClient.complete(
-                    "你是一位个人理财助手。请基于下面的记账汇总数据，用中文写一段简洁、有条理的消费分析，"
-                            + "指出值得关注的点并给出可执行建议，不超过 200 字。",
+                    effectivePrompt(context),
                     rules, apiKey(context), baseUrl(context), model(context));
             if (text == null || text.trim().isEmpty()) {
                 return new Result(rules, ENGINE_LOCAL, "大模型返回为空，已改用本地规则引擎");
@@ -222,6 +276,14 @@ public final class AiAnalysis {
             if (!anyBudget) {
                 sb.append("尚未设置分类预算。");
             }
+
+            // 日平均 / 日标准差 / 日中位数：口径与电脑端、后端一致
+            List<ExpenseStats.Entry> expenseEntries = new ArrayList<>();
+            for (Transaction t : cur) {
+                if (!"EXPENSE".equals(t.type)) continue;
+                if (t.amount > 0) expenseEntries.add(new ExpenseStats.Entry(t.date, BigDecimal.valueOf(t.amount)));
+            }
+            sb.append(ExpenseStats.describeDaily(ExpenseStats.ofDaily(year, month, expenseEntries), periodLabel(year, month)));
             return sb.toString();
         }
 
@@ -251,6 +313,15 @@ public final class AiAnalysis {
             Category c = catRepo.findActive(clientId);
             if (c == null) return "未分类";
             return (c.icon == null || c.icon.isEmpty()) ? c.name : c.icon + " " + c.name;
+        }
+
+        /** 当月说「本月」，已结束的月份说具体年月 —— 免得 9 月看 8 月数据时被「本月」误导。 */
+        private static String periodLabel(int year, int month) {
+            LocalDate now = LocalDate.now();
+            if (year == now.getYear() && month == now.getMonthValue()) {
+                return "本月";
+            }
+            return String.format("%d年%d月", year, month);
         }
     }
 

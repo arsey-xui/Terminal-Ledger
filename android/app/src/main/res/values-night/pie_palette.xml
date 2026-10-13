@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  饼图/环图调色板（深色基底）。
+  与浅色同一套思路：靠前的颜色落在占比最大的扇区上，所以大扇区保持「亮而不刺眼」，
+  深色只在小扇区出现。这里把浅灰换成中灰，避免深底上出现一块刺眼的白。
+-->
+<resources>
+    <!--
+      顺序按「明度从高到低」：占比最大的扇区拿到最亮的颜色，深色只落在小扇区上
+      （小扇区本来就标在环外）。这样每个扇区的标签都能拿到合适的反色。
+      最大的扇区是酸橙绿（品牌色、亮度约 0.8，配黑字），其次交给浅灰。
+    -->
+    <array name="pie_palette">
+        <item>@color/primary</item>
+        <item>@color/text_secondary</item>
+        <item>@color/chart_text</item>
+        <item>@color/expense</item>
+        <item>@color/chart_grid</item>
+        <item>@color/primary_dark</item>
+    </array>
+</resources>

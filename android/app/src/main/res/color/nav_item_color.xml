@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  底部导航的图标/文字着色：选中态酸橙绿，未选中态次级灰。
+  深色基底见 values-night/color/nav_item_color.xml。
+-->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:color="#C0FF00" android:state_checked="true"/>
-    <item android:color="#8C8C8C"/>
+    <item android:color="@color/accent" android:state_checked="true"/>
+    <item android:color="@color/text_secondary"/>
 </selector>

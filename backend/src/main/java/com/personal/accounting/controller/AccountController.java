@@ -5,6 +5,7 @@ import com.personal.accounting.dto.ApiResponse;
 import com.personal.accounting.entity.Account;
 import com.personal.accounting.repository.AccountRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
@@ -24,6 +25,7 @@ public class AccountController {
                 .map(AccountDto::from).toList());
     }
 
+    @Transactional
     @PostMapping
     public ApiResponse<AccountDto> create(@RequestBody AccountDto dto) {
         Account a = new Account();
@@ -33,6 +35,7 @@ public class AccountController {
         return ApiResponse.ok(AccountDto.from(a), "已创建");
     }
 
+    @Transactional
     @PutMapping("/{clientId}")
     public ApiResponse<AccountDto> update(@PathVariable String clientId, @RequestBody AccountDto dto) {
         return repository.findByClientId(clientId)
@@ -45,6 +48,7 @@ public class AccountController {
                 .orElseGet(() -> ApiResponse.fail("账户不存在"));
     }
 
+    @Transactional
     @DeleteMapping("/{clientId}")
     public ApiResponse<Void> delete(@PathVariable String clientId) {
         repository.findByClientId(clientId).ifPresent(a -> {

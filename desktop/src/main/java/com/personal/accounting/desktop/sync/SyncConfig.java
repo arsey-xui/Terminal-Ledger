@@ -14,7 +14,7 @@ import java.util.UUID;
 public final class SyncConfig {
 
     // 默认留空：首次使用需在「数据管理 → 设置后端地址」填写自己的后端地址（如 http://localhost:8080 或局域网 IP），填了自动保存。
-    public static String BASE_URL = "";
+    public static volatile String BASE_URL = "";
 
     private static final Path DATA_DIR = Paths.get(System.getProperty("user.home"), "accounting");
     private static final Path FILE = DATA_DIR.resolve("sync.properties");
@@ -47,7 +47,16 @@ public final class SyncConfig {
     /** 保存后端地址（写盘 + 更新静态值）。 */
     public static void saveBaseUrl(String url) throws IOException {
         String v = url == null ? "" : url.trim();
+        String previous = BASE_URL;
         BASE_URL = v;
+
+        // 值没变就别写盘：程序在受限环境下（例如运行在低完整性级别的沙箱里）本来就写不了
+        // 数据目录，而「地址已经是这个值」时再写一次毫无意义 —— 拒掉写操作反而会让用户
+        // 以为保存失败，其实什么也没变。这也是用户点开设置、直接点保存时最常见的情况。
+        if (v.equals(previous != null ? previous.trim() : "")) {
+            return;
+        }
+
         Files.createDirectories(DATA_DIR);
         Properties p = new Properties();
         p.setProperty("base_url", v);

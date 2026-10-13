@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit;
 
 public class ApiClient {
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
-    private final OkHttpClient client = new OkHttpClient.Builder()
+    private static final OkHttpClient CLIENT = new OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
@@ -36,7 +36,7 @@ public class ApiClient {
     }
 
     private <T> T execute(Request req, Class<T> cls) throws IOException {
-        try (Response resp = client.newCall(req).execute()) {
+        try (Response resp = CLIENT.newCall(req).execute()) {
             String s = resp.body().string();
             if (!resp.isSuccessful()) {
                 throw new IOException("HTTP " + resp.code() + ": " + s);

@@ -1,15 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  分类按钮/标签：直角矩形 + 1px 描边，选中态用酸橙绿实心。
+  颜色全部走资源，深色基底由 values-night/colors.xml 覆盖，不再硬编码 ——
+  之前这里写死 #FFFFFF / #D9D9D9，深色下会变成一块刺眼的白底。
+-->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_selected="true">
         <shape android:shape="rectangle">
-            <solid android:color="#C0FF00"/>
+            <solid android:color="@color/primary"/>
             <corners android:radius="0dp"/>
         </shape>
     </item>
     <item>
         <shape android:shape="rectangle">
-            <solid android:color="#FFFFFF"/>
-            <stroke android:width="1dp" android:color="#D9D9D9"/>
+            <solid android:color="@color/chip_background"/>
+            <stroke android:width="1dp" android:color="@color/chip_stroke"/>
             <corners android:radius="0dp"/>
         </shape>
     </item>

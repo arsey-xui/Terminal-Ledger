@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  往右切（选中更靠右的标签，索引增大）：新页从右侧滑入。
+
+  位移必须用 100% 屏宽而不是百分比小值：推拉式切换里两页是**并排**移动的，
+  用 30% 会在中间留下一段两边都没盖住的空隙。整屏位移才是真正的「推过去」。
+  淡入依然保留，避免硬边从屏幕外切入时的突兀感。
+-->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@android:anim/decelerate_interpolator">
+
+    <alpha
+        android:duration="300"
+        android:fromAlpha="0.0"
+        android:toAlpha="1.0" />
+
+    <translate
+        android:duration="300"
+        android:fromXDelta="100%p"
+        android:toXDelta="0" />
+</set>

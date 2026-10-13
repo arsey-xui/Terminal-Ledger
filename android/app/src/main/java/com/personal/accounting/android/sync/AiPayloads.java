@@ -6,12 +6,14 @@ public final class AiPayloads {
     private AiPayloads() {
     }
 
-    /** AI 消费分析请求：year/month/engine，可选客户端自传 apiKey/baseUrl/model。 */
+    /** AI 消费分析请求：year/month/engine，可选客户端自传 apiKey/baseUrl/model/prompt。 */
     public static class Request {
         public Integer year;
         public Integer month;
         /** RULE / LLM */
         public String engine;
+        /** 自定义系统提示词；留空则后端用内置默认那份 */
+        public String prompt;
         public String apiKey;
         public String baseUrl;
         public String model;

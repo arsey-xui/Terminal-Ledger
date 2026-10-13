@@ -46,8 +46,18 @@ public final class Recurrence {
     public static List<LocalDate> dueDates(RecurringRule rule, LocalDate until) {
         List<LocalDate> out = new ArrayList<>();
         if (rule == null || !rule.enabled || until == null || rule.anchorDate == null) return out;
-        if (Math.max(1, rule.intervalCount) > 3650) return out;
-        for (int i = 0; i <= 4000; i++) {
+        int startIdx = 0;
+        if (rule.lastGeneratedDate != null && rule.lastGeneratedDate.isAfter(rule.anchorDate)) {
+            int step = Math.max(1, rule.intervalCount);
+            String unit = rule.intervalUnit == null ? "MONTH" : rule.intervalUnit.toUpperCase(Locale.ROOT);
+            long span = switch (unit) {
+                case "DAY" -> java.time.temporal.ChronoUnit.DAYS.between(rule.anchorDate, rule.lastGeneratedDate);
+                case "WEEK" -> java.time.temporal.ChronoUnit.WEEKS.between(rule.anchorDate, rule.lastGeneratedDate);
+                default -> java.time.temporal.ChronoUnit.MONTHS.between(rule.anchorDate, rule.lastGeneratedDate);
+            };
+            startIdx = Math.max(0, (int) (span / step) - 1);
+        }
+        for (int i = startIdx; i <= 4000; i++) {
             LocalDate date = occurrence(rule, i);
             if (date == null || date.isAfter(until)) break;
             if (rule.lastGeneratedDate == null || date.isAfter(rule.lastGeneratedDate)) out.add(date);

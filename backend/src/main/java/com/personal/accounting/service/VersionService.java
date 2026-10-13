@@ -44,10 +44,16 @@ public class VersionService {
         if (snapshot != null && System.currentTimeMillis() - snapshot.fetchedAt() < ttlMillis) {
             return snapshot.info();
         }
-        Info fromGithub = fetchFromGithub();
-        Info result = fromGithub != null ? fromGithub : fromConfig;
-        cached = new Cached(result, System.currentTimeMillis());
-        return result;
+        synchronized (this) {
+            snapshot = cached; // re-check
+            if (snapshot != null && System.currentTimeMillis() - snapshot.fetchedAt() < ttlMillis) {
+                return snapshot.info();
+            }
+            Info fromGithub = fetchFromGithub();
+            Info result = fromGithub != null ? fromGithub : fromConfig;
+            cached = new Cached(result, System.currentTimeMillis());
+            return result;
+        }
     }
 
     private Info fromConfig() {

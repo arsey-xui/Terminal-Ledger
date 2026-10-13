@@ -10,6 +10,43 @@
 | 桌面包 | `desktop/pom.xml`(shade) + `scripts/build-desktop-installer.ps1` | `.\scripts\build-desktop-installer.ps1` | `outputs\TerminalLedger\TerminalLedger.exe` |
 | Android APK | `android/app/build.gradle`(签名) + `scripts/build-android-release.ps1` | `.\scripts\build-android-release.ps1 -GenerateKeystore` | `outputs\apk\TerminalLedger-v0.1.0.apk` |
 
+> **重要：`outputs\TerminalLedger` 里的 exe 不适合直接运行。**
+> 它的位置属于「构建输出目录」，机器上可能有完整性级别限制（Windows 的
+> `Mandatory Label\Low Mandatory Level` + No-Write-Up）。从那里启动的程序会继承低完整性令牌，
+> **写不了用户目录**：表现为「设置后端地址保存失败」，以及更隐蔽的
+> `org.h2.jdbc.JdbcSQLNonTransientException: The database is read only`
+> ——本地库只能只读打开，同步一写就失败。
+>
+> 安装/使用时请把整个 `TerminalLedger` 文件夹**用资源管理器复制到普通位置**（桌面、
+> `%LOCALAPPDATA%\Programs`、`D:\Apps` 等），再运行里面的 exe。用资源管理器复制或从 zip 解压出来的
+> 文件不会带那个标签；可用 `icacls 文件夹 /t | findstr "Mandatory Label"` 确认（输出为空即正常）。
+> 数据目录仍是 `~/accounting`，换位置不影响账本。
+>
+> **不想搬位置时的就地修复**（管理员 PowerShell）：把这个文件夹的完整性级别提回 Medium，
+> 之后从原位置直接运行也能写数据。
+>
+> ```powershell
+> icacls outputs\TerminalLedger /t /setintegritylevel M
+> ```
+>
+> 两个注意点：一是**每次重新打包都会重建这个目录、标签随之丢失**，需要重跑一次；
+> 二是工作区根目录本身带 Low 标签并向下继承，所以只对 `outputs\TerminalLedger` 单独提级即可，
+> 不要把工作区根也提上去 —— 那会让沙箱内的构建进程反而写不进工作区（No-Write-Up 是双向的）。
+
+### 构建目录的完整性标签（本地开发时会踩到）
+
+完整性标签会**双向**挡人：低完整性进程写不进高完整性的对象，高完整性进程写不进低完整性的对象
+（后者只在对方是显式 Low 时发生）。在本机同时用「沙箱内的工具」和「普通权限的编辑器」改这个仓库时，
+`target/`、`build/` 这类构建目录会出现两种现象：
+
+| 现象 | 原因 | 处理 |
+| --- | --- | --- |
+| 报「写不出 `Xxx.class`」「写不出 `createdFiles.lst`」 | 构建目录里的文件是另一个完整性级别的进程生成的 | 删掉该构建目录重新生成（`desktop\target`、`backend\target`） |
+| Gradle 报 `gradle-*-bin.zip.lck 拒绝访问` | 缓存目录缺少 Low 标签 | 对整个工作区重跑一次 `icacls <工作区> /t /c /setintegritylevel L` |
+
+新目录**不会自动继承**父目录的标签，所以 Maven/Gradle 新建的目录会落在默认的 Medium，
+低完整性的构建进程就写不进去。删掉重建即可恢复（重建出来的目录会带上父目录的标签）。
+
 ---
 
 ## 1. 后端 Docker 一键启动

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  深色基底下的底部导航着色：选中态保持酸橙绿（品牌锚点不变），
+  未选中态从 #8C8C8C 换成 @color/text_secondary（深色下为 #9E9E9E），
+  免得在近黑底上发闷。
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="@color/accent" android:state_checked="true"/>
+    <item android:color="@color/text_secondary"/>
+</selector>

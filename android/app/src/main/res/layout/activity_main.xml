@@ -22,7 +22,22 @@
         app:itemIconTint="@color/nav_item_color"
         app:itemTextColor="@color/nav_item_color"
         app:menu="@menu/bottom_nav"
+        app:itemRippleColor="@android:color/transparent"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
+
+    <!--
+      底部导航的滑动指示条（只有它是一段 2dp 细线，由 MainActivity 平移）。
+      菜单项自带的 Material 水波纹用 app:itemRippleColor 去掉了 —— 圆形扩散与这套直角语言不搭，
+      选中反馈改成「指示条滑过去 + 图标文字变酸橙绿」。
+    -->
+    <View
+        android:id="@+id/nav_indicator"
+        android:layout_width="0dp"
+        android:layout_height="2dp"
+        android:background="@color/primary"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintBottom_toBottomOf="@id/bottom_nav" />
 </androidx.constraintlayout.widget.ConstraintLayout>

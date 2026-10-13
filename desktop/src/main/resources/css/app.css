@@ -51,6 +51,16 @@
 .nav-btn:hover {
     -fx-background-color: rgba(0, 0, 0, 0.05);
     -fx-text-fill: #1A1A1A;
+    /* 左侧 1px 酸橙绿刻度：悬停时就给出「即将选中」的提示，与选中态的粗黑刻度区分 */
+    -fx-border-color: transparent transparent transparent #C0FF00;
+    -fx-border-width: 0 0 0 1;
+}
+/* 按下：反转成深色底 + 酸橙绿字，与全局按钮同一套按压语言 */
+.nav-btn:pressed {
+    -fx-background-color: #1A1A1A;
+    -fx-text-fill: #C0FF00;
+    -fx-border-color: transparent transparent transparent #C0FF00;
+    -fx-border-width: 0 0 0 3;
 }
 .nav-btn:selected {
     -fx-background-color: #C0FF00;
@@ -126,16 +136,25 @@
     -fx-padding: 8 18;
     -fx-cursor: hand;
 }
+/* 悬停：填充让位给 1px 酸橙绿描边，保留直角轮廓 */
 .button:hover {
     -fx-background-color: #FFFFFF;
     -fx-text-fill: #000000;
     -fx-border-color: #C0FF00;
     -fx-border-width: 1;
 }
+/* 按下：反转成深色底 + 酸橙绿字，与手机端的按压语言一致（填充反转，不用扩散动画） */
 .button:pressed {
-    -fx-background-color: #C0FF00;
-    -fx-text-fill: #000000;
+    -fx-background-color: #1A1A1A;
+    -fx-text-fill: #C0FF00;
     -fx-border-color: #C0FF00;
+    -fx-border-width: 1;
+}
+/* 键盘焦点用酸橙绿描边表示，不画 JavaFX 默认的那圈光晕 */
+.button:focused {
+    -fx-border-color: #C0FF00;
+    -fx-border-width: 1;
+    -fx-effect: null;
 }
 .text-field, .password-field {
     -fx-background-color: rgba(255, 255, 255, 0.72);
@@ -211,22 +230,32 @@
 }
 
 /* ---------------- 图表 ---------------- */
+/* 配色与手机端 values/colors.xml、values-night/colors.xml 是同一套语义角色 */
 .chart { -fx-background-color: transparent; }
 .chart-plot-background { -fx-background-color: transparent; }
-.chart-vertical-grid-lines, .chart-horizontal-grid-lines { -fx-stroke: rgba(0, 0, 0, 0.08); }
+/* 网格线：1px 细线，与配色表的 hairline 同族（#D9D9D9），别用「默认虚线灰」 */
+.chart-vertical-grid-lines, .chart-horizontal-grid-lines { -fx-stroke: #D9D9D9; }
 .axis { -fx-tick-label-fill: #8C8C8C; }
+/* 刻度数字用等宽字体：关键数据要 tabular numerals，比例字体下刻度会参差 */
+.axis { -fx-tick-label-font-family: "Consolas", "Menlo", monospace; }
 .chart-legend { -fx-background-color: transparent; }
 .chart-legend .label { -fx-text-fill: #6B6B6B; }
+/*
+  饼图调色板按「明度从高到低」排列：调色板是按扇区占比从大到小依次取用的，
+  所以最亮的放在最前（大扇区配深字），最暗的两个只落在小扇区上。
+  顺序与手机端 pie_palette.xml 保持一致。
+*/
 .default-color0.chart-pie { -fx-pie-color: #C0FF00; }
-.default-color1.chart-pie { -fx-pie-color: #4A4A4A; }
-.default-color2.chart-pie { -fx-pie-color: #C0C0C0; }
+.default-color1.chart-pie { -fx-pie-color: #EDEDED; }
+.default-color2.chart-pie { -fx-pie-color: #8C8C8C; }
 .default-color3.chart-pie { -fx-pie-color: #D64545; }
-.default-color4.chart-pie { -fx-pie-color: #8C8C8C; }
+.default-color4.chart-pie { -fx-pie-color: #6B6B6B; }
 .default-color5.chart-pie { -fx-pie-color: #A6D800; }
-.default-color6.chart-pie { -fx-pie-color: #FFD700; }
+.default-color6.chart-pie { -fx-pie-color: #4A4A4A; }
 .default-color7.chart-pie { -fx-pie-color: #B0B0B0; }
 .default-color0.chart-series-line { -fx-stroke: #C0FF00; -fx-stroke-width: 2px; }
-.default-color0.chart-line-symbol { -fx-background-color: #FFFFFF, #C0FF00; }
+/* 数据点符号：外圈用主色、中心用底色，和手机端折线一样不做成白点 */
+.default-color0.chart-line-symbol { -fx-background-color: #C0FF00, #FAFAFA; }
 .chart-bar { -fx-bar-fill: #C0FF00; }
 
 /* ---------------- 顶部饰条 & 内容头栏 ---------------- */

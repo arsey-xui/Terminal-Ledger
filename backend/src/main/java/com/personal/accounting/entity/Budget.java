@@ -2,6 +2,7 @@ package com.personal.accounting.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import lombok.Getter;
@@ -17,6 +18,9 @@ import java.math.BigDecimal;
 @Table(name = "budget", uniqueConstraints = {
         @UniqueConstraint(name = "uk_budget_cat_month",
                 columnNames = {"category_client_id", "budget_year", "budget_month"})
+}, indexes = {
+        @Index(name = "idx_budget_year_month", columnList = "budget_year, budget_month"),
+        @Index(name = "idx_budget_last_modified", columnList = "last_modified")
 })
 @Getter
 @Setter

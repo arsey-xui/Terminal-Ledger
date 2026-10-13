@@ -7,10 +7,10 @@
 ## 项目简介
 
 - **离线优先**：手机端（SQLite）与电脑端（H2）各自维护全量本地数据，断网时所有操作照常进行。
-- **云端同步**：有网络时自动做**增量同步**，基于 `last_modified` 时间戳，采用 **最后写入胜出（LWW, Last-Write-Wins）** 合并策略，冲突无需人工选择。
-- **C 级报表**：流水记录、分类下钻、近 30 天趋势、环比对比、预算进度条、年度日历热力图。
-- **高级亮点**：截图记账（手机端端上离线 OCR，自动读金额+商户）、报表层 AI 消费分析（内置规则引擎兜底，可选填自己的 API Key 走大模型）、应用内检查更新（直连 GitHub Releases）、Android 桌面小组件、输入法语音 + 文本解析记账。
-- **数据安全**：CSV 导出、加密 `.zip` 完整备份包一键导入导出、账单照片上传。
+- **云端同步**：保存记账后自动触发一次，也可手动点「立即同步」；云端按 `last_modified` 做 **最后写入胜出（LWW, Last-Write-Wins）** 合并，冲突无需人工选择。两端当前都是**全量对账**（push 送全量本地数据、pull 从水位 0 翻页拉取，服务端只返回近 3 个月），没有做水位增量，也没有网络状态监听或后台定时同步。手机端设置页显示「上次同步于 X 分钟前」，失败时给出原因并可「重试同步」。
+- **C 级报表**：流水记录、分类下钻、跨月趋势（近 6 个月，可切换支出/收入/单个分类；点击或悬停看金额）、近 30 天趋势、环比对比、预算进度条、年度日历热力图。
+- **高级亮点**：截图记账（本机离线识别；配了自己的 API Key 可改用多模态大模型，自动填好金额、账户、分类；支持从相册选图，也可以直接在微信/支付宝里把截图「分享」进来）、报表层 AI 消费分析（内置规则引擎兜底，分析里给出本月日平均支出 / 日支出标准差 / 日支出中位数，提示词可自己改）、应用内检查更新（直连 GitHub Releases）、Android 桌面小组件、输入法语音 + 文本解析记账。
+- **数据安全**：CSV 导出、加密 `.zip` 完整备份包一键导入导出（手机端与电脑端格式一致、可互相恢复）、账单照片上传。
 
 ---
 
@@ -22,7 +22,7 @@
 | 移动端 | Android 原生 Java | SQLite (Room 风格 DAO) | Gradle |
 | 桌面端 | JavaFX (Java 17+) | H2 (嵌入式) | Maven |
 
-同步协议：RESTful API + JSON，时间戳增量同步 + LWW 合并。
+同步协议：RESTful API + JSON，全量对账 + 时间戳 LWW 合并（协议支持水位增量，客户端暂未启用）。
 
 ---
 
@@ -118,8 +118,7 @@ mvn javafx:run
 ```
 [Android SQLite] ──push──▶ [Spring Boot / MySQL] ◀──pull── [JavaFX H2]
         │                            │                        │
-        └────── 增量(last_modified) ─┘                        │
-                 LWW 合并 (较大时间戳胜出)                      └────────┘
+        └──── 全量对账 + LWW        ─┘                        └────────┘
 ```
 
 每条业务记录都带：
@@ -170,7 +169,8 @@ mysql -u root -p < sql/init.sql
 - [docs/AI-ANALYSIS.md](docs/AI-ANALYSIS.md) — AI 消费分析接口
 - [docs/VOICE-AND-WIDGET.md](docs/VOICE-AND-WIDGET.md) — 语音记账与小组件
 - [docs/RECURRING.md](docs/RECURRING.md) — 周期记账（自动续费 / 固定收支）
-- [docs/RELEASE-NOTES-v1.2.0.md](docs/RELEASE-NOTES-v1.2.0.md) — 当前版本（v1.2.0）更新说明
+- [docs/RELEASE-NOTES-v1.3.0.md](docs/RELEASE-NOTES-v1.3.0.md) — 当前版本（v1.3.0）更新说明
+- [docs/RELEASE-NOTES-v1.2.0.md](docs/RELEASE-NOTES-v1.2.0.md) — v1.2.0（周期记账）更新说明
 - [docs/RELEASE-NOTES-v1.1.1.md](docs/RELEASE-NOTES-v1.1.1.md) — v1.1.1（修订版，已并入 v1.2.0 发布）
 - [docs/RELEASE-NOTES-v1.1.0.md](docs/RELEASE-NOTES-v1.1.0.md) — 更早版本（v1.1.0）更新说明
 - [docs/BUILD-AND-RELEASE.md](docs/BUILD-AND-RELEASE.md) — 桌面包 / Android APK / Docker 一键出包

@@ -11,9 +11,33 @@
         android:orientation="vertical"
         android:padding="16dp">
 
+        <!--
+          外观：深浅模式。放在最前面是因为它要用来区分两件事 ——
+          「配色本身好不好看」与「跟随系统是否正常」。
+          强制浅色/深色可以绕开系统的「强制深色」干扰，直接看到应用自己的一套配色。
+        -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:text="外观"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            android:fontFamily="monospace"
+            android:textStyle="bold" />
+        <Button
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:id="@+id/btn_theme_mode"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="深浅模式：跟随系统"
+            android:textColor="@color/text_primary"
+            app:cornerRadius="0dp"
+            app:strokeColor="@color/accent" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
             android:text="云端地址"
             android:textColor="@color/text_secondary"
             android:textSize="12sp"
@@ -47,10 +71,21 @@
             android:text="立即同步" />
         <TextView
             android:id="@+id/sync_status"
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:textColor="@color/text_secondary"
             android:fontFamily="monospace" />
+        <!-- 只在「最近一次同步失败且还没被成功覆盖」时露出来 -->
+        <Button
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:id="@+id/btn_sync_retry"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="重试同步"
+            android:textColor="@color/text_primary"
+            android:visibility="gone"
+            app:cornerRadius="0dp"
+            app:strokeColor="@color/accent" />
 
         <TextView
             android:layout_width="wrap_content"
@@ -151,20 +186,51 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
-            android:text="高级"
+            android:text="备份与导出"
             android:textColor="@color/text_secondary"
             android:textSize="12sp"
             android:fontFamily="monospace"
             android:textStyle="bold" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="备份含全部流水、分类、账户、预算、模板与周期规则，用口令加密（AES-256），格式与电脑端一致、可互相恢复。CSV 只导出流水明细。"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp" />
         <Button
             style="@style/Widget.MaterialComponents.Button.OutlinedButton"
             android:id="@+id/btn_export_csv"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="导出 CSV（电脑端数据管理）"
+            android:text="导出 CSV（流水明细）"
             android:textColor="@color/text_primary"
             app:cornerRadius="0dp"
             app:strokeColor="@color/accent" />
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+            <Button
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:id="@+id/btn_backup_export"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="导出备份"
+                android:textColor="@color/text_primary"
+                app:cornerRadius="0dp"
+                app:strokeColor="@color/accent" />
+            <Button
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:id="@+id/btn_backup_import"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="导入备份"
+                android:textColor="@color/text_primary"
+                app:cornerRadius="0dp"
+                app:strokeColor="@color/accent" />
+        </LinearLayout>
 
         <TextView
             android:layout_width="wrap_content"

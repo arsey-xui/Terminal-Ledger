@@ -14,7 +14,7 @@ public class TemplateRepo {
     private final DatabaseHelper helper;
 
     public TemplateRepo(Context context) {
-        helper = new DatabaseHelper(context);
+        helper = DatabaseHelper.getInstance(context);
     }
 
     private SQLiteDatabase rw() {
@@ -37,6 +37,7 @@ public class TemplateRepo {
     }
 
     public Template find(String clientId) {
+        if (clientId == null) return null;
         try (Cursor c = rw().query("template", null, "client_id=?", new String[]{clientId}, null, null, null)) {
             return c.moveToFirst() ? fromCursor(c) : null;
         }

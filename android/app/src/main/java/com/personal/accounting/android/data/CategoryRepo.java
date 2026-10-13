@@ -14,7 +14,7 @@ public class CategoryRepo {
     private final DatabaseHelper helper;
 
     public CategoryRepo(Context context) {
-        helper = new DatabaseHelper(context);
+        helper = DatabaseHelper.getInstance(context);
     }
 
     private SQLiteDatabase rw() {
@@ -36,6 +36,10 @@ public class CategoryRepo {
             while (c.moveToNext()) list.add(fromCursor(c));
         }
         return list;
+    }
+
+    public List<Category> list() {
+        return all();
     }
 
     /**
@@ -69,6 +73,10 @@ public class CategoryRepo {
     }
 
     public Category find(String clientId) {
+        // clientId 可能为空（例如周期规则没选分类）。空值不能进 selectionArgs：
+        // SQLite 的 String[] 参数走 bindString，绑到 null 会抛
+        // IllegalArgumentException: the bind value at index N is null。
+        if (clientId == null) return null;
         try (Cursor c = rw().query("category", null, "client_id=?", new String[]{clientId}, null, null, null)) {
             return c.moveToFirst() ? fromCursor(c) : null;
         }
@@ -76,6 +84,7 @@ public class CategoryRepo {
 
     /** 仅返回「未删除」的分类（不论支出/收入），用于 UI 解析分类名；避免查到已被软删除的墓碑。 */
     public Category findActive(String clientId) {
+        if (clientId == null) return null;
         try (Cursor c = rw().query("category", null, "client_id=? AND deleted=0",
                 new String[]{clientId}, null, null, null)) {
             return c.moveToFirst() ? fromCursor(c) : null;
@@ -128,15 +137,15 @@ public class CategoryRepo {
 
     private Category fromCursor(Cursor c) {
         Category x = new Category();
-        x.clientId = c.getString(0);
-        x.name = c.getString(1);
-        x.type = c.getString(2);
-        x.icon = c.getString(3);
-        x.sortOrder = c.getInt(4);
-        x.lastModified = c.getLong(5);
-        x.deleted = c.getInt(6) == 1;
-        x.createdAt = c.getString(7);
-        x.updatedAt = c.getString(8);
+        x.clientId = c.getString(c.getColumnIndexOrThrow("client_id"));
+        x.name = c.getString(c.getColumnIndexOrThrow("name"));
+        x.type = c.getString(c.getColumnIndexOrThrow("type"));
+        x.icon = c.getString(c.getColumnIndexOrThrow("icon"));
+        x.sortOrder = c.getInt(c.getColumnIndexOrThrow("sort_order"));
+        x.lastModified = c.getLong(c.getColumnIndexOrThrow("last_modified"));
+        x.deleted = c.getInt(c.getColumnIndexOrThrow("deleted")) == 1;
+        x.createdAt = Timestamps.toIso(c.getString(c.getColumnIndexOrThrow("created_at")));
+        x.updatedAt = Timestamps.toIso(c.getString(c.getColumnIndexOrThrow("updated_at")));
         return x;
     }
 }

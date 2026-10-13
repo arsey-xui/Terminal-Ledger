@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  工业风按压反馈（实心按钮）：默认酸橙绿填充 + 黑字，按下**瞬时反转**为黑底 + 酸橙绿字。
+
+  为什么用 backgroundTint 选择器而不是自绘背景：
+  MaterialButton 的圆形水波纹是叠在背景之上的一层，自绘背景挡不住它。
+  这里把 rippleColor 设为透明（去掉圆形扩散），再用 tint 做填充反转 ——
+  得到的是「填充与描边的切换」，正是规范里要求的按压反馈形式，没有扩散动画。
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true" android:color="#000000" />
+    <item android:state_enabled="false" android:color="@color/hairline" />
+    <item android:color="@color/primary" />
+</selector>

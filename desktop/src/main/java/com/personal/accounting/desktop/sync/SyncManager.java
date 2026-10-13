@@ -74,9 +74,7 @@ public class SyncManager {
     }
 
     private Transaction findTxn(String id) {
-        var list = db.listTransactions(null, null, null, null);
-        for (Transaction t : list) if (t.clientId.equals(id)) return t;
-        return null;
+        return db.findTransactionByClientId(id);
     }
 
     private boolean lww(Category c) {

@@ -13,6 +13,11 @@ import com.personal.accounting.desktop.service.UpdateCheck;
 import com.personal.accounting.desktop.service.UpdateConfig;
 import com.personal.accounting.desktop.sync.SyncConfig;
 import com.personal.accounting.desktop.sync.SyncManager;
+import javafx.animation.FadeTransition;
+import javafx.animation.Interpolator;
+import javafx.animation.ParallelTransition;
+import javafx.animation.TranslateTransition;
+import javafx.collections.ListChangeListener;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
 import javafx.application.Platform;
@@ -24,6 +29,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
+import javafx.util.Duration;
 
 import java.io.File;
 import java.math.BigDecimal;
@@ -38,10 +44,64 @@ public class MainController {
     @FXML private ToggleButton navDashboard, navRecord, navAccount, navRecurring, navBudget, navData;
     @FXML private Label headerTitle, headerStatus, appVersion;
 
+    public static final java.util.concurrent.ExecutorService SYNC_EXECUTOR = 
+        java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "sync-worker");
+            t.setDaemon(true);
+            return t;
+        });
+
     private final ToggleGroup group = new ToggleGroup();
     private final DataManager db = AppState.db();
     /** 刷新「待确认」清单与侧边栏角标（周期记账页构造后可用）。 */
     private Runnable renderPendingWithBadge = () -> { };
+
+    /** 首次填充内容不做动画：启动时整页淡入一次反而显得闪。 */
+    private boolean firstContentShown = true;
+
+    /**
+     * 页面切换的入场：新内容淡入 + 从右侧 14px 轻微滑入，280ms。
+     *
+     * <p>挂在 content 的子节点列表上，所以九处 {@code content.getChildren().setAll(...)}
+     * 切换点都不用改 —— 谁换内容谁就自动带上这个入场。</p>
+     *
+     * <p>位移量比手机端小：桌面窗口大、鼠标操作没有「手指划过去」的方向感，
+     * 位移过大反而显得晃。方向仍与手机端一致：自右向左。</p>
+     */
+    private void installPageTransition() {
+        if (content == null) return;
+        content.getChildren().addListener((ListChangeListener<Node>) change -> {
+            if (firstContentShown) {
+                firstContentShown = false;
+                return;
+            }
+            if (content.getChildren().isEmpty()) return;
+            playEnterAnimation(content.getChildren().get(0));
+        });
+    }
+
+    private static void playEnterAnimation(Node page) {
+        Duration duration = Duration.millis(280);
+        page.setOpacity(0d);
+        page.setTranslateX(14d);
+
+        FadeTransition fade = new FadeTransition(duration, page);
+        fade.setFromValue(0d);
+        fade.setToValue(1d);
+
+        TranslateTransition slide = new TranslateTransition(duration, page);
+        slide.setFromX(14d);
+        slide.setToX(0d);
+        // 归位：避免长期留着非零位移影响后续的布局计算
+        slide.setOnFinished(e -> {
+            page.setTranslateX(0d);
+            page.setOpacity(1d);
+        });
+
+        ParallelTransition enter = new ParallelTransition(fade, slide);
+        enter.setInterpolator(Interpolator.EASE_OUT);
+        enter.play();
+    }
 
     @FXML
     public void initialize() {
@@ -58,6 +118,7 @@ public class MainController {
             appVersion.setText("v" + UpdateCheck.currentVersion());
         }
         refreshRecurringBadge();
+        installPageTransition();
         showDashboard();
     }
 
@@ -161,7 +222,7 @@ public class MainController {
                         p.date == null ? "" : p.date.toString(),
                         "INCOME".equals(p.type) ? "收入" : "支出",
                         p.amount == null ? 0.0 : p.amount.doubleValue(),
-                        categoryName(p.categoryClientId),
+                        db.categoryName(p.categoryClientId),
                         (p.note == null || p.note.isBlank()) ? "" : "  · " + p.note));
                 Button confirm = new Button("确认入账");
                 confirm.setOnAction(e -> {
@@ -210,12 +271,12 @@ public class MainController {
             for (RecurringRule r : rules) {
                 HBox row = new HBox(10);
                 row.setAlignment(Pos.CENTER_LEFT);
-                String account = accountName(r.accountClientId);
+                String account = db.accountName(r.accountClientId);
                 Label text = new Label(String.format("%s  %.2f 元  %s · %s · %s%s",
                         r.name,
                         r.amount == null ? 0.0 : r.amount.doubleValue(),
                         Recurrence.describe(r),
-                        categoryName(r.categoryClientId),
+                        db.categoryName(r.categoryClientId),
                         account,
                         r.enabled ? "" : "（已停用）"));
                 Button edit = new Button("编辑");
@@ -470,7 +531,7 @@ public class MainController {
             LocalDate month = LocalDate.now();
             budgetList.getItems().setAll(db.listBudgets(month.getYear(), month.getMonthValue()).stream()
                     .map(b -> String.format("%s：上限 %.2f 元",
-                            categoryName(b.categoryClientId),
+                            db.categoryName(b.categoryClientId),
                             b.amountLimit == null ? 0.0 : b.amountLimit.doubleValue()))
                     .toList());
         };
@@ -553,14 +614,21 @@ public class MainController {
 
         Button sync = new Button("立即同步");
         sync.setOnAction(e -> {
-            try {
-                Alert a = new Alert(Alert.AlertType.INFORMATION, new SyncManager(db).sync());
-                a.show();
-            } catch (Exception ex) {
-                Alert a = new Alert(Alert.AlertType.INFORMATION,
-                        "暂时连不上云端（后端未启动时属正常），已保持本地离线使用。\n" + ex.getMessage());
-                a.show();
-            }
+            SYNC_EXECUTOR.submit(() -> {
+                try {
+                    SyncConfig.loadBaseUrl();
+                    String result = new SyncManager(db).sync();
+                    Platform.runLater(() -> {
+                        Alert a = new Alert(Alert.AlertType.INFORMATION, result);
+                        a.show();
+                    });
+                } catch (Exception ex) {
+                    Platform.runLater(() -> {
+                        Alert a = new Alert(Alert.AlertType.ERROR, "同步失败: " + ex.getMessage());
+                        a.show();
+                    });
+                }
+            });
         });
 
         Button csv = new Button("导出 CSV");
@@ -603,10 +671,21 @@ public class MainController {
         Button ai = new Button("生成 AI 消费分析");
         ai.setOnAction(e -> {
             LocalDate now = LocalDate.now();
-            String report = new AiReportGenerator(db).generate(now.getYear(), now.getMonthValue());
-            Alert a = new Alert(Alert.AlertType.INFORMATION, report);
-            a.setHeaderText("AI 消费分析");
-            a.show();
+            new Thread(() -> {
+                try {
+                    String report = new AiReportGenerator(db).generate(now.getYear(), now.getMonthValue());
+                    Platform.runLater(() -> {
+                        Alert a = new Alert(Alert.AlertType.INFORMATION, report);
+                        a.setHeaderText("AI 消费分析");
+                        a.show();
+                    });
+                } catch (Exception ex) {
+                    Platform.runLater(() -> {
+                        Alert a = new Alert(Alert.AlertType.ERROR, "AI 报告生成失败: " + ex.getMessage());
+                        a.show();
+                    });
+                }
+            }).start();
         });
 
         // AI 设置入口：首次向导之外，随时可以改 API Key / 切回规则引擎
@@ -748,13 +827,13 @@ public class MainController {
             info("重置失败：" + ex.getMessage());
             return;
         }
-        new Thread(() -> {
+        SYNC_EXECUTOR.submit(() -> {
             try {
                 new SyncManager(db).sync();
             } catch (Exception ignore) {
                 // 离线时静默失败，下次同步会补上
             }
-        }).start();
+        });
         info("已重置" + what + "为初次安装状态");
         refreshCurrentArea();
     }
@@ -816,19 +895,5 @@ public class MainController {
 
     private void info(String msg) {
         new Alert(Alert.AlertType.INFORMATION, msg).show();
-    }
-
-    /** 分类名（找不到时显示"未分类"），预算列表等处使用。 */
-    private String categoryName(String clientId) {
-        if (clientId == null) return "未分类";
-        Category c = db.findCategory(clientId);
-        return c == null ? "未分类" : c.name;
-    }
-
-    /** 账户名（找不到时显示"默认账户"）。 */
-    private String accountName(String clientId) {
-        if (clientId == null) return "默认账户";
-        Account a = db.findAccount(clientId);
-        return a == null ? "默认账户" : a.name;
     }
 }

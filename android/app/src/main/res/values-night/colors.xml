@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  鹰角网络 (Hypergryph) 机能工业风 —— 深色基底（跟随系统深色模式）。
+
+  设计约束：**不偏离浅色那套风格**。所以这里不是「另做一套皮肤」，
+  而是同一套语义角色翻到近黑基底：
+    · 强调色 #C0FF00 完全不动（品牌锚点，规范里点名的酸橙绿）
+    · #1A1A1A 与 #F5F5F5 角色互换 —— 深色下前者当面板底、后者当主文字
+    · #2C2C2C 来自规范给的主色列表，深色下补位成「舞台底」与卡片之间的层次
+    · 1px 细线保留（#3D3D3D），它是这套语言的骨架，不能因为深色就省略
+    · 红绿提亮是为了深底上的对比度，色相不变
+-->
+<resources>
+    <!-- 强调色：与浅色完全一致 -->
+    <color name="primary">#C0FF00</color>
+    <color name="primary_dark">#A6D800</color>
+    <color name="accent">#C0FF00</color>
+
+    <!-- 舞台底与面板：近黑，不用纯黑，给面板留一点过渡余量 -->
+    <color name="background">#0A0A0A</color>
+    <color name="surface">#1A1A1A</color>
+    <color name="card">#2C2C2C</color>
+
+    <!-- 语义色：色相不变，明度提亮以适配深底 -->
+    <color name="income">#7CD86A</color>
+    <color name="expense">#FF6B6B</color>
+    <color name="warning">#FFD700</color>
+
+    <!-- 三级文字：主文字用 #F5F5F5（与浅色底角色互换） -->
+    <color name="text_primary">#F5F5F5</color>
+    <color name="text_secondary">#9E9E9E</color>
+
+    <!-- 1px 细线 -->
+    <color name="hairline">#3D3D3D</color>
+
+    <!-- 图表 -->
+    <color name="chart_text">#B0B0B0</color>
+    <color name="chart_axis">#8C8C8C</color>
+    <color name="chart_grid">#3D3D3D</color>
+    <!-- 网格线：与 hairline 同值（深色下也保持 1px 细线，不能因为深就省略） -->
+    <color name="chart_line">#3D3D3D</color>
+    <color name="no_data">#7A7A7A</color>
+    <!-- 深色底上填充略降不透明度，免得整片发绿 -->
+    <color name="chart_fill">#33C0FF00</color>
+
+    <!-- 热力图空值：必须接近底色，否则整片热力图会发亮 -->
+    <color name="heatmap_empty">#1F1F1F</color>
+
+    <!-- 饼图标签：反色由 PieSliceLabelRenderer 按扇区明度自动选 -->
+    <color name="pie_label_name">#FFFFFF</color>
+    <color name="pie_label_value">#000000</color>
+    <!-- 深色字配浅描边、浅色字配深描边 -->
+    <color name="pie_label_halo_for_dark">#88FFFFFF</color>
+    <color name="pie_label_halo_for_light">#66000000</color>
+
+    <!-- 分类按钮等控件面 -->
+    <color name="chip_background">#2C2C2C</color>
+    <color name="chip_stroke">#3D3D3D</color>
+    <!-- 选中态底色是酸橙绿，文字仍固定黑 -->
+    <color name="chip_text_selected">#000000</color>
+</resources>

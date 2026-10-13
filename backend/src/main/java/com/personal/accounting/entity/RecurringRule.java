@@ -2,6 +2,7 @@ package com.personal.accounting.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -17,7 +18,9 @@ import java.time.LocalDate;
  * 所以这里只保存规则本身，不保存生成结果。</p>
  */
 @Entity
-@Table(name = "recurring_rule")
+@Table(name = "recurring_rule", indexes = {
+        @Index(name = "idx_recurring_last_modified", columnList = "last_modified")
+})
 @Getter
 @Setter
 @NoArgsConstructor

@@ -49,7 +49,7 @@ public class SyncManager {
     private final SyncStateRepo stateRepo;
     private final RecurringRepo recurringRepo;
     private final ApiClient api = new ApiClient();
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private static final ExecutorService executor = Executors.newSingleThreadExecutor();
 
     public SyncManager(Context context) {
         this.context = context.getApplicationContext();
@@ -102,6 +102,7 @@ public class SyncManager {
                 while (!done) {
                     SyncPayloads.PullResponse resp = api.post("/api/sync/pull", pullReq, SyncPayloads.PullResponse.class);
                     if (resp == null) {
+                        SyncStatus.recordFailure(context, "服务端返回为空");
                         notifyUi(callback, false, "服务端返回为空");
                         return;
                     }
@@ -117,10 +118,13 @@ public class SyncManager {
                         pullReq.cursor = resp.nextCursor;
                     }
                 }
+                // 结果统一记在这里：记账页/小组件触发的后台同步没有回调，也要能反映到状态位上
+                SyncStatus.recordSuccess(context);
                 notifyUi(callback, true, "同步完成");
                 Log.d(TAG, "sync done (full)");
             } catch (Exception e) {
                 Log.e(TAG, "sync failed", e);
+                SyncStatus.recordFailure(context, e.getMessage());
                 notifyUi(callback, false, "同步失败: " + e.getMessage());
             }
         });

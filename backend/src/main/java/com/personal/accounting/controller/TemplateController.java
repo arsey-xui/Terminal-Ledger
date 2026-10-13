@@ -5,6 +5,7 @@ import com.personal.accounting.dto.TemplateDto;
 import com.personal.accounting.entity.Template;
 import com.personal.accounting.repository.TemplateRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
@@ -24,6 +25,7 @@ public class TemplateController {
                 .map(TemplateDto::from).toList());
     }
 
+    @Transactional
     @PostMapping
     public ApiResponse<TemplateDto> create(@RequestBody TemplateDto dto) {
         Template t = new Template();
@@ -33,6 +35,7 @@ public class TemplateController {
         return ApiResponse.ok(TemplateDto.from(t), "已创建");
     }
 
+    @Transactional
     @PutMapping("/{clientId}")
     public ApiResponse<TemplateDto> update(@PathVariable String clientId, @RequestBody TemplateDto dto) {
         return repository.findByClientId(clientId)
@@ -45,6 +48,7 @@ public class TemplateController {
                 .orElseGet(() -> ApiResponse.fail("模板不存在"));
     }
 
+    @Transactional
     @DeleteMapping("/{clientId}")
     public ApiResponse<Void> delete(@PathVariable String clientId) {
         repository.findByClientId(clientId).ifPresent(t -> {

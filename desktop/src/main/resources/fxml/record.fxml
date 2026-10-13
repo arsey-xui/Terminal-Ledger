@@ -8,6 +8,18 @@
       styleClass="area" spacing="12" alignment="TOP_LEFT">
     <Label text="记账录入" styleClass="h1"/>
 
+    <!--
+      首次使用引导：只在「一条流水都还没有」时显示（由 RecordController 控制），
+      记完第一笔自动消失，不依赖任何「首次使用」标记。
+    -->
+    <VBox fx:id="firstUseCard" styleClass="panel" spacing="6" visible="false" managed="false">
+        <Label text="开始记账" styleClass="h2"/>
+        <Label text="分类和账户已按常用项配好了（餐饮、交通…现金、微信），填好金额点「保存」就能记第一笔。"
+               wrapText="true"/>
+        <Label text="想改成自己的：用下面的「新建分类」，或到「设置」里管理分类与账户。" wrapText="true"/>
+        <Label text="记完去「报表」页看分类占比、跨月趋势和 AI 消费分析。" wrapText="true"/>
+    </VBox>
+
     <HBox spacing="12" alignment="CENTER_LEFT">
         <Label text="类型" />
         <RadioButton fx:id="rbExpense" text="支出" selected="true"/>

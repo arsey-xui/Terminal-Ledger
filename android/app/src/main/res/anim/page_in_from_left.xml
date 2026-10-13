@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  往左切（选中更靠左的标签，索引减小）：新页从**左侧**滑入。
+
+  与往右切镜像对称。这正是之前搞错的地方 —— 早先假设「任何一次切换都是往右走」，
+  于是不论点哪边都从左侧进入，从右边的页面切回左边时方向就是反的。
+  正确的方向语义是：**看索引往哪变**，往右切新页自右入、往左切新页自左入。
+-->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@android:anim/decelerate_interpolator">
+
+    <alpha
+        android:duration="300"
+        android:fromAlpha="0.0"
+        android:toAlpha="1.0" />
+
+    <translate
+        android:duration="300"
+        android:fromXDelta="-100%p"
+        android:toXDelta="0" />
+</set>

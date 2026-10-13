@@ -11,6 +11,55 @@
         android:orientation="vertical"
         android:padding="16dp">
 
+        <!--
+          首次使用引导：只在「一条流水都还没有」时显示（由 RecordFragment 控制），
+          记完第一笔自动消失，不依赖任何「首次使用」标记。
+          观感按这套语言来：直角、1px 细线边框、等宽小标题。
+        -->
+        <LinearLayout
+            android:id="@+id/first_use_card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:orientation="vertical"
+            android:padding="12dp"
+            android:background="@drawable/category_chip"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="开始记账"
+                android:textColor="@color/text_primary"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:fontFamily="monospace" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="分类和账户已按常用项配好了（餐饮、交通…现金、微信），直接填金额就能记第一笔。"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="想改成自己的：右上角「设置」→「管理分类 / 管理账户」。"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="底部的「报表」能看到分类占比、跨月趋势和 AI 消费分析。"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp" />
+        </LinearLayout>
+
         <TextView
             android:id="@+id/date_view"
             android:layout_width="wrap_content"

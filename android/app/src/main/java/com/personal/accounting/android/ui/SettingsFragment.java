@@ -1,7 +1,10 @@
 package com.personal.accounting.android.ui;
 
+import android.app.Activity;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -10,20 +13,26 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
+import android.text.InputType;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 import androidx.fragment.app.Fragment;
 
+import com.personal.accounting.android.AccountingApp;
 import com.personal.accounting.android.R;
 import com.personal.accounting.android.data.AccountRepo;
+import com.personal.accounting.android.data.BackupService;
 import com.personal.accounting.android.data.BudgetRepo;
 import com.personal.accounting.android.data.CategoryRepo;
+import com.personal.accounting.android.data.TransactionRepo;
 import com.personal.accounting.android.data.Recurrence;
 import com.personal.accounting.android.data.RecurringRepo;
 import com.personal.accounting.android.model.Account;
@@ -32,11 +41,17 @@ import com.personal.accounting.android.model.RecurringPending;
 import com.personal.accounting.android.model.RecurringRule;
 import com.personal.accounting.android.sync.SyncConfig;
 import com.personal.accounting.android.sync.SyncManager;
+import com.personal.accounting.android.sync.SyncStatus;
 import com.personal.accounting.android.update.ApkUpdater;
 import com.personal.accounting.android.update.UpdateClient;
 import com.personal.accounting.android.update.UpdateConfig;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -45,6 +60,40 @@ public class SettingsFragment extends Fragment {
 
     private static final String PREFS = "sync_prefs";
 
+    /** 导出目标文件的用途：写 CSV 还是写加密备份。 */
+    private enum ExportKind { CSV, BACKUP }
+
+    private ExportKind pendingExport;
+
+    /** 「深浅模式」按钮：文字要反映当前模式，切回来时由 onCreateView 重设。 */
+    private Button themeButton;
+    /** 导出备份时用户设的口令，等选完保存位置再写文件。 */
+    private char[] pendingPassword;
+
+    /** 选「保存到哪里」→ 回来写文件（Csv / 备份包共用）。 */
+    private final ActivityResultLauncher<Intent> createFileLauncher =
+            registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
+                ExportKind kind = pendingExport;
+                char[] password = pendingPassword;
+                pendingExport = null;
+                pendingPassword = null;
+                if (result.getResultCode() != Activity.RESULT_OK
+                        || result.getData() == null || result.getData().getData() == null || kind == null) {
+                    return;
+                }
+                writeToFile(result.getData().getData(), kind, password);
+            });
+
+    /** 选一个备份文件 → 问口令 → 导入。 */
+    private final ActivityResultLauncher<Intent> openFileLauncher =
+            registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
+                if (result.getResultCode() != Activity.RESULT_OK
+                        || result.getData() == null || result.getData().getData() == null) {
+                    return;
+                }
+                askPasswordThenRestore(result.getData().getData());
+            });
+
     private EditText urlInput;
     private TextView statusView;
     private TextView versionView;
@@ -52,6 +101,17 @@ public class SettingsFragment extends Fragment {
     private AccountRepo accountRepo;
     private RecurringRepo recurringRepo;
     private LinearLayout recurringContainer;
+    private Button syncRetryButton;
+
+    /** 每 30 秒刷一次状态行，让「X 分钟前」自己往前走。 */
+    private static final long SYNC_STATUS_TICK_MS = 30_000L;
+    private final Runnable syncStatusTick = new Runnable() {
+        @Override
+        public void run() {
+            refreshSyncStatus();
+            mainHandler.postDelayed(this, SYNC_STATUS_TICK_MS);
+        }
+    };
 
     /** 版本检查走后台线程，避免网络请求卡 UI。 */
     private final ExecutorService updateExec = Executors.newSingleThreadExecutor();
@@ -88,14 +148,14 @@ public class SettingsFragment extends Fragment {
             Toast.makeText(requireContext(), "已保存后端地址", Toast.LENGTH_SHORT).show();
         });
 
-        v.findViewById(R.id.btn_sync_now).setOnClickListener(x ->
-                new SyncManager(requireContext()).sync((ok, msg) -> {
-                    statusView.setText(msg);
-                    Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show();
-                }));
+        syncRetryButton = v.findViewById(R.id.btn_sync_retry);
+        v.findViewById(R.id.btn_sync_now).setOnClickListener(x -> startSync(true));
+        syncRetryButton.setOnClickListener(x -> startSync(true));
+        refreshSyncStatus();
 
-        v.findViewById(R.id.btn_export_csv).setOnClickListener(x ->
-                Toast.makeText(requireContext(), "CSV 导出已实现于电脑端数据管理", Toast.LENGTH_SHORT).show());
+        v.findViewById(R.id.btn_export_csv).setOnClickListener(x -> exportCsv());
+        v.findViewById(R.id.btn_backup_export).setOnClickListener(x -> exportBackup());
+        v.findViewById(R.id.btn_backup_import).setOnClickListener(x -> importBackup());
         v.findViewById(R.id.btn_manage_category).setOnClickListener(x -> manageCategories());
         v.findViewById(R.id.btn_manage_account).setOnClickListener(x -> manageAccounts());
         v.findViewById(R.id.btn_reset_category).setOnClickListener(x -> resetCategories());
@@ -104,9 +164,87 @@ public class SettingsFragment extends Fragment {
         v.findViewById(R.id.btn_check_update).setOnClickListener(x -> checkUpdate());
         v.findViewById(R.id.btn_update_source).setOnClickListener(x -> configureUpdateSource());
         v.findViewById(R.id.btn_add_recurring).setOnClickListener(x -> showRecurringDialog(null));
+        themeButton = v.findViewById(R.id.btn_theme_mode);
+        themeButton.setOnClickListener(x -> pickThemeMode());
+        updateThemeButtonLabel();
         recurringRepo.materialize(java.time.LocalDate.now());
         renderRecurring();
         return v;
+    }
+
+    // ---------- 外观：深浅模式 ----------
+
+    /**
+     * 选择深浅模式。默认「跟随系统」；强制浅色/深色是为了绕开部分 ROM
+     * （ColorOS、MIUI 等）的「强制深色」——它会在浅色界面上自作主张地反色，
+     * 只反文字不反背景，导致白字压浅底看不清。强制指定模式后即可看到应用自己的配色。
+     */
+    private void pickThemeMode() {
+        final String[] labels = {"跟随系统", "强制浅色", "强制深色"};
+        int current = AccountingApp.storedMode();
+        new AlertDialog.Builder(requireContext())
+                .setTitle("深浅模式")
+                .setSingleChoiceItems(labels, current, (dialog, which) -> {
+                    AccountingApp.setThemeMode(which);
+                    dialog.dismiss();
+                    // 切换会重建 Activity，界面与按钮文字都会随之刷新
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    private void updateThemeButtonLabel() {
+        if (themeButton == null) return;
+        String label;
+        switch (AccountingApp.storedMode()) {
+            case AccountingApp.MODE_LIGHT:
+                label = "强制浅色";
+                break;
+            case AccountingApp.MODE_DARK:
+                label = "强制深色";
+                break;
+            default:
+                label = "跟随系统";
+                break;
+        }
+        themeButton.setText("深浅模式：" + label);
+    }
+
+    // ---------- 同步状态 ----------
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        refreshSyncStatus();
+        // 先清掉可能残留的回调，避免重复 post 叠起来
+        mainHandler.removeCallbacks(syncStatusTick);
+        mainHandler.postDelayed(syncStatusTick, SYNC_STATUS_TICK_MS);
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        mainHandler.removeCallbacks(syncStatusTick);
+    }
+
+    /** 触发一次同步；手动点才弹提示，其它情况只更新状态行。 */
+    private void startSync(boolean showToast) {
+        statusView.setText("正在同步…");
+        new SyncManager(requireContext()).sync((ok, msg) -> {
+            if (!isAdded() || getActivity() == null || getActivity().isFinishing()) return;
+            refreshSyncStatus();
+            if (showToast) Toast.makeText(requireContext().getApplicationContext(), msg, Toast.LENGTH_SHORT).show();
+        });
+    }
+
+    /** 状态行 + 重试按钮：只有失败还没被一次成功覆盖掉时才露出重试。 */
+    private void refreshSyncStatus() {
+        if (statusView == null) return;
+        statusView.setText(SyncStatus.describe(requireContext()));
+        if (syncRetryButton != null) {
+            syncRetryButton.setVisibility(SyncStatus.hasPendingFailure(requireContext())
+                    ? View.VISIBLE : View.GONE);
+        }
     }
 
     // ---------- 检查更新 ----------
@@ -386,12 +524,15 @@ public class SettingsFragment extends Fragment {
     }
 
     private View ruleRow(RecurringRule r) {
+        // 竖排：说明文字独占整行宽度，按钮另起一行，和上面的 pendingRow 一致。
+        // 原来把文字放在横向 LinearLayout 里用 0dp + weight=1 与两个按钮并排：
+        // 横向布局首轮测量会跳过这种加权子视图，行高实际按按钮高度定，
+        // 文字换到第 3、4 行时末尾会被裁掉，且滚动也看不到（外层是竖排 ScrollView）。
         LinearLayout row = new LinearLayout(requireContext());
-        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setOrientation(LinearLayout.VERTICAL);
         row.setPadding(0, dp(6), 0, dp(6));
 
         TextView info = new TextView(requireContext());
-        info.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         String cat = catRepo.findActive(r.categoryClientId) == null ? "未分类"
                 : catRepo.findActive(r.categoryClientId).name;
         String acct = accountRepo.find(r.accountClientId) == null ? "默认账户"
@@ -403,10 +544,13 @@ public class SettingsFragment extends Fragment {
         info.setTextSize(13f);
         row.addView(info);
 
+        LinearLayout actions = new LinearLayout(requireContext());
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+
         Button edit = new Button(requireContext());
         edit.setText("编辑");
         edit.setOnClickListener(x -> showRecurringDialog(r));
-        row.addView(edit);
+        actions.addView(edit);
 
         Button del = new Button(requireContext());
         del.setText("删除");
@@ -415,7 +559,9 @@ public class SettingsFragment extends Fragment {
             Toast.makeText(requireContext(), "已删除规则：" + r.name, Toast.LENGTH_SHORT).show();
             renderRecurring();
         }));
-        row.addView(del);
+        actions.addView(del);
+
+        row.addView(actions);
         return row;
     }
 
@@ -665,6 +811,136 @@ public class SettingsFragment extends Fragment {
             dialog.dismiss();
         }));
         dialog.show();
+    }
+
+    // ---------- 备份与导出 ----------
+
+    /** 导出 CSV：列与电脑端一致，只含流水明细。 */
+    private void exportCsv() {
+        pendingExport = ExportKind.CSV;
+        createFileLauncher.launch(createDocumentIntent("text/csv", "TerminalLedger-" + stamp() + ".csv"));
+    }
+
+    /** 导出加密备份：先设口令，再选保存位置。 */
+    private void exportBackup() {
+        EditText password = passwordField("设置口令（至少 6 位）");
+        EditText confirm = passwordField("再输一次");
+
+        LinearLayout box = new LinearLayout(requireContext());
+        box.setOrientation(LinearLayout.VERTICAL);
+        int pad = dp(24);
+        box.setPadding(pad, 0, pad, 0);
+        box.addView(password);
+        box.addView(confirm);
+
+        new AlertDialog.Builder(requireContext())
+                .setTitle("导出备份")
+                .setMessage("备份包含全部流水、分类、账户、预算、模板和周期规则，用口令加密（AES-256）。\n"
+                        + "口令丢了这份文件就打不开了，请自己记牢；格式与电脑端一致，可以互相恢复。")
+                .setView(box)
+                .setPositiveButton("选保存位置", (d, w) -> {
+                    String p1 = password.getText().toString();
+                    String p2 = confirm.getText().toString();
+                    if (p1.length() < 6) {
+                        Toast.makeText(requireContext(), "口令至少 6 位", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    if (!p1.equals(p2)) {
+                        Toast.makeText(requireContext(), "两次输入的口令不一致", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    pendingPassword = p1.toCharArray();
+                    pendingExport = ExportKind.BACKUP;
+                    createFileLauncher.launch(createDocumentIntent("application/zip",
+                            "TerminalLedger-backup-" + stamp() + ".zip"));
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    /** 导入备份：选文件 → 问口令 → 合并回本机。 */
+    private void importBackup() {
+        // 备份文件是加密后的字节，扩展名和真实 MIME 都不一定，所以不限类型
+        openFileLauncher.launch(new Intent(Intent.ACTION_OPEN_DOCUMENT)
+                .addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("*/*"));
+    }
+
+    private void askPasswordThenRestore(Uri source) {
+        EditText password = passwordField("备份口令");
+        int pad = dp(24);
+        password.setPadding(pad, pad / 2, pad, pad / 2);
+        new AlertDialog.Builder(requireContext())
+                .setTitle("导入备份")
+                .setMessage("会把备份里的数据合并回本机：缺的记录补上，同一条按修改时间取较新的那条。\n"
+                        + "不会删除你本机现有的记录。")
+                .setView(password)
+                .setPositiveButton("导入", (d, w) ->
+                        runRestore(source, password.getText().toString().toCharArray()))
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    private void runRestore(Uri source, char[] password) {
+        Context app = requireContext().getApplicationContext();
+        Toast.makeText(requireContext(), "正在导入…", Toast.LENGTH_SHORT).show();
+        updateExec.execute(() -> {
+            try (InputStream in = app.getContentResolver().openInputStream(source)) {
+                if (in == null) throw new IOException("无法读取所选文件");
+                BackupService.RestoreResult result = BackupService.restore(app, in, password);
+                mainHandler.post(() -> {
+                    if (!isAdded() || getActivity() == null || getActivity().isFinishing()) return;
+                    renderRecurring();   // 周期规则可能一起回来了，刷新列表
+                    Toast.makeText(requireContext().getApplicationContext(), "导入完成：" + result.summary(),
+                            Toast.LENGTH_LONG).show();
+                });
+            } catch (Exception e) {
+                postToast("导入失败：" + e.getMessage());
+            }
+        });
+    }
+
+    private void writeToFile(Uri target, ExportKind kind, char[] password) {
+        Context app = requireContext().getApplicationContext();
+        Toast.makeText(requireContext(), "正在导出…", Toast.LENGTH_SHORT).show();
+        updateExec.execute(() -> {
+            try (OutputStream out = app.getContentResolver().openOutputStream(target, "wt")) {
+                if (out == null) throw new IOException("无法写入所选位置");
+                if (kind == ExportKind.CSV) {
+                    BackupService.exportCsv(out, new TransactionRepo(app).listModifiedSince(0));
+                } else {
+                    BackupService.writeBackup(app, out, password);
+                }
+                postToast("已导出");
+            } catch (Exception e) {
+                postToast("导出失败：" + e.getMessage());
+            }
+        });
+    }
+
+    private void postToast(String message) {
+        mainHandler.post(() -> {
+            if (!isAdded() || getActivity() == null || getActivity().isFinishing()) return;
+            Toast.makeText(requireContext().getApplicationContext(), message, Toast.LENGTH_LONG).show();
+        });
+    }
+
+    private EditText passwordField(String hint) {
+        EditText input = new EditText(requireContext());
+        input.setHint(hint);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        return input;
+    }
+
+    private Intent createDocumentIntent(String mimeType, String fileName) {
+        return new Intent(Intent.ACTION_CREATE_DOCUMENT)
+                .addCategory(Intent.CATEGORY_OPENABLE)
+                .setType(mimeType)
+                .putExtra(Intent.EXTRA_TITLE, fileName);
+    }
+
+    private static String stamp() {
+        return LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
     }
 
     private int dp(int v) {

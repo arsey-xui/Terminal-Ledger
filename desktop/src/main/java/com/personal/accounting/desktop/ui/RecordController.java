@@ -9,6 +9,7 @@ import javafx.beans.property.ReadOnlyObjectWrapper;
 import javafx.fxml.FXML;
 import javafx.scene.control.*;
 import javafx.scene.layout.GridPane;
+import javafx.scene.layout.VBox;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -26,6 +27,7 @@ public class RecordController {
     @FXML private TableColumn<com.personal.accounting.desktop.model.Transaction, BigDecimal> colAmount;
     @FXML private TableColumn<com.personal.accounting.desktop.model.Transaction, String> colCategory;
     @FXML private TableColumn<com.personal.accounting.desktop.model.Transaction, String> colNote;
+    @FXML private VBox firstUseCard;
 
     private final DataManager db = AppState.db();
 
@@ -44,7 +46,7 @@ public class RecordController {
 
         colDate.setCellValueFactory(d -> new ReadOnlyObjectWrapper<>(d.getValue().date));
         colAmount.setCellValueFactory(d -> new ReadOnlyObjectWrapper<>(d.getValue().amount));
-        colCategory.setCellValueFactory(d -> new ReadOnlyObjectWrapper<>(categoryName(d.getValue().categoryClientId)));
+        colCategory.setCellValueFactory(d -> new ReadOnlyObjectWrapper<>(db.categoryName(d.getValue().categoryClientId)));
         colNote.setCellValueFactory(d -> new ReadOnlyObjectWrapper<>(d.getValue().note));
         loadTransactions();
     }
@@ -138,13 +140,13 @@ public class RecordController {
         db.deleteCategory(target.clientId);
         loadCategories(income);
         loadTransactions();
-        new Thread(() -> {
+        MainController.SYNC_EXECUTOR.submit(() -> {
             try {
                 new SyncManager(db).sync();
             } catch (Exception ignore) {
                 // 离线时静默失败，下次同步会补上
             }
-        }).start();
+        });
         info("已删除分类：" + target.name + (affected > 0 ? "（" + affected + " 条流水保留，显示为未分类）" : ""));
     }
 
@@ -181,12 +183,12 @@ public class RecordController {
         t.deleted = false;
         db.upsertTransaction(t);
 
-        new Thread(() -> {
+        MainController.SYNC_EXECUTOR.submit(() -> {
             try {
                 new SyncManager(db).sync();
             } catch (Exception ignore) {
             }
-        }).start();
+        });
 
         amountField.clear();
         noteField.clear();
@@ -209,12 +211,21 @@ public class RecordController {
 
     private void loadTransactions() {
         table.getItems().setAll(db.listTransactions(null, null, null, null));
+        refreshFirstUseCard();
     }
 
-    private String categoryName(String clientId) {
-        if (clientId == null) return "未分类";
-        var c = db.findCategory(clientId);
-        return c == null ? "未分类" : c.name;
+    /**
+     * 首次使用引导卡：只在**一条流水都还没有**时显示。
+     *
+     * <p>看的是流水总数而不是「首次使用」标记 —— 记完第一笔它自己就消失，
+     * 换库、清数据也能正确复位，不会出现「标记说看过、用户其实没记过」的错位。
+     * 同时切换 {@code managed}：JavaFX 里隐藏的节点若仍参与布局会留一块空白。</p>
+     */
+    private void refreshFirstUseCard() {
+        if (firstUseCard == null) return;
+        boolean empty = db.countTransactions() == 0;
+        firstUseCard.setVisible(empty);
+        firstUseCard.setManaged(empty);
     }
 
     private void warn(String msg) {

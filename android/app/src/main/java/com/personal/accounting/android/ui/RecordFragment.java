@@ -2,11 +2,11 @@ package com.personal.accounting.android.ui;
 
 import android.content.Context;
 import android.content.Intent;
+import android.content.res.ColorStateList;
 import android.net.Uri;
 import android.app.Activity;
 import android.os.Bundle;
 import android.os.Build;
-import android.text.InputType;
 import android.text.TextUtils;
 import android.graphics.Color;
 import android.view.Gravity;
@@ -28,6 +28,9 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.fragment.app.Fragment;
 
 import com.personal.accounting.android.R;
+import com.personal.accounting.android.analysis.AiSettingsDialog;
+import com.personal.accounting.android.bill.BillAiPrompt;
+import com.personal.accounting.android.bill.BillAiRecognizer;
 import com.personal.accounting.android.bill.BillTextParser;
 import com.personal.accounting.android.bill.ScreenshotOcr;
 import com.personal.accounting.android.data.AccountRepo;
@@ -39,6 +42,7 @@ import com.personal.accounting.android.model.Budget;
 import com.personal.accounting.android.model.Category;
 import com.personal.accounting.android.model.Transaction;
 import com.personal.accounting.android.sync.SyncManager;
+import com.personal.accounting.android.voice.VoiceEntryDialog;
 import com.personal.accounting.android.voice.VoiceInputParser;
 
 import java.time.LocalDate;
@@ -47,7 +51,7 @@ import java.util.List;
 import java.util.UUID;
 
 /** 快速记账页：数字键盘 + 分类快捷图标 + 账户选择 + 语音入口。 */
-public class RecordFragment extends Fragment {
+public class RecordFragment extends Fragment implements VoiceEntryDialog.Host {
 
 
     private EditText amountInput;
@@ -64,12 +68,36 @@ public class RecordFragment extends Fragment {
     private String selectedAccountId;
     private boolean isIncome = false;
     private ScreenshotOcr screenshotOcr;
+    private BillAiRecognizer billAiRecognizer;
+
+    /**
+     * 从系统「分享」进来的一张图片，由 MainActivity 在展示本页之前设置。
+     * 用一次性字段而不是 arguments：旋转重建时字段天然为 null，不会重复识别一遍。
+     */
+    private Uri sharedImageUri;
     private final ActivityResultLauncher<Intent> imagePicker =
             registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
                 if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null) return;
                 Uri uri = result.getData().getData();
                 if (uri != null) runOcr(uri);
             });
+
+    /** 接收系统分享过来的图片；由 MainActivity 在**新实例**创建前调用，只生效一次。 */
+    public void setSharedImageUri(Uri uri) {
+        this.sharedImageUri = uri;
+    }
+
+    /**
+     * 已经显示中的记账页收到新的分享图片。
+     *
+     * <p>记账页现在会被缓存（hide 而不是销毁），所以再次分享时复用的是同一个实例 ——
+     * 这时来不及走 {@code onCreateView}，直接在这里跑识别。</p>
+     */
+    public void onSharedImage(Uri uri) {
+        if (uri == null) return;
+        sharedImageUri = null;
+        runOcr(uri);
+    }
 
     @Nullable
     @Override
@@ -109,6 +137,14 @@ public class RecordFragment extends Fragment {
         ((TextView) v.findViewById(R.id.summary_balance)).setText(String.format("¥%.2f", s[2]));
 
         refreshRecurringHint(v);
+        refreshFirstUseCard(v);
+
+        // 从分享进来的截图：直接开始识别，省掉手动选图这一步
+        if (sharedImageUri != null) {
+            Uri uri = sharedImageUri;
+            sharedImageUri = null;
+            runOcr(uri);
+        }
         return v;
     }
 
@@ -117,7 +153,22 @@ public class RecordFragment extends Fragment {
         super.onResume();
         // 从设置页确认完待办回来时刷新提示
         View v = getView();
-        if (v != null) refreshRecurringHint(v);
+        if (v != null) {
+            refreshRecurringHint(v);
+            refreshFirstUseCard(v);
+        }
+    }
+
+    /**
+     * 首次使用引导卡：只在**一条流水都还没有**时显示。
+     *
+     * <p>不依赖「首次使用」标记，而是看流水总数 —— 记完第一笔它自己就消失了，
+     * 卸载重装、清数据也能正确复位，不会出现「标记说已看过、但用户其实什么都没记」的错位。</p>
+     */
+    private void refreshFirstUseCard(View v) {
+        View card = v.findViewById(R.id.first_use_card);
+        if (card == null) return;
+        card.setVisibility(txRepo.countAll() == 0 ? View.VISIBLE : View.GONE);
     }
 
     /** 周期记账：有待确认项时提示去「设置 → 周期记账」确认。 */
@@ -143,6 +194,18 @@ public class RecordFragment extends Fragment {
         categoryBar.removeAllViews();
         List<Category> cats = isIncome ? catRepo.listIncome() : catRepo.listExpense();
         selectedCategoryId = null; // 切换 支出/收入 后需重新选分类
+        // 一个分类都没有时，栏里只剩「＋ 新增」，用户不知道这是怎么回事，先说明一句
+        if (cats.isEmpty()) {
+            TextView empty = new TextView(requireContext());
+            empty.setText(isIncome ? "还没有收入分类，点「＋ 新增」建一个" : "还没有支出分类，点「＋ 新增」建一个");
+            empty.setTextColor(ChartColors.of(requireContext(), R.color.text_secondary));
+            empty.setTextSize(13f);
+            empty.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            LinearLayout.LayoutParams emptyLp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            emptyLp.setMargins(4, 4, 12, 4);
+            categoryBar.addView(empty, emptyLp);
+        }
         int chipMinWidth = categoryChipMinWidth(cats);
         for (Category c : cats) {
             LinearLayout chip = categoryChip(c.icon, c.name, chipMinWidth);
@@ -203,9 +266,18 @@ public class RecordFragment extends Fragment {
         chip.setBackgroundResource(R.drawable.category_chip);
         chip.setPadding(dp(6), dp(8), dp(6), dp(8));
 
+        // 选中态底色是酸橙绿，文字必须固定黑；未选中态用主题主文字色，
+        // 否则深色模式下近黑文字压在深色卡面上会看不见。
+        ColorStateList chipText = new ColorStateList(
+                new int[][]{{android.R.attr.state_selected}, {}},
+                new int[]{
+                        ChartColors.of(ctx, R.color.chip_text_selected),
+                        ChartColors.of(ctx, R.color.text_primary)
+                });
+
         TextView iconView = new TextView(ctx);
         iconView.setText(iconOrNull == null ? "" : iconOrNull);
-        iconView.setTextColor(Color.parseColor("#1A1A1A"));
+        iconView.setTextColor(chipText);
         iconView.setTextSize(16);
         iconView.setIncludeFontPadding(false);
         iconView.setGravity(Gravity.CENTER);
@@ -215,7 +287,7 @@ public class RecordFragment extends Fragment {
 
         TextView nameView = new TextView(ctx);
         nameView.setText(name);
-        nameView.setTextColor(Color.parseColor("#1A1A1A"));
+        nameView.setTextColor(chipText);
         nameView.setTextSize(16);
         nameView.setIncludeFontPadding(false);
         nameView.setGravity(Gravity.CENTER);
@@ -275,6 +347,10 @@ public class RecordFragment extends Fragment {
         if (screenshotOcr != null) {
             screenshotOcr.shutdown();
             screenshotOcr = null;
+        }
+        if (billAiRecognizer != null) {
+            billAiRecognizer.shutdown();
+            billAiRecognizer = null;
         }
         super.onDestroyView();
     }
@@ -355,41 +431,89 @@ public class RecordFragment extends Fragment {
     }
 
     // ---------- 语音输入（交给输入法的语音转文字，本应用只做文本解析） ----------
+
+    /** 打开共用的语音输入弹窗：记账页与桌面小组件用的是同一套格式与解析。 */
     private void startVoice(View v) {
-        // 不再自研语音识别：用输入法的麦克风说话转成文字，这里负责把文字解析成金额 + 分类。
-        EditText input = new EditText(requireContext());
-        input.setHint("例如：午餐27元");
-        input.setInputType(InputType.TYPE_CLASS_TEXT);
-        int pad = dp(20);
-        input.setPadding(pad, pad / 2, pad, pad / 2);
-        new AlertDialog.Builder(requireContext())
-                .setTitle("语音输入 · 文本解析")
-                .setMessage("点击输入框后，用输入法键盘上的麦克风说话，文字会出现在框里；"
-                        + "也可以用键盘手动输入或粘贴。确认后自动识别金额与分类。")
-                .setView(input)
-                .setPositiveButton("解析填入", (d, w) -> {
-                    String text = input.getText().toString().trim();
-                    if (text.isEmpty()) {
-                        Toast.makeText(requireContext(), "没有内容可解析", Toast.LENGTH_SHORT).show();
-                        return;
-                    }
-                    applyParsedText(text);
-                })
-                .setNegativeButton("取消", null)
-                .show();
+        VoiceEntryDialog.show(requireContext(), this);
     }
 
-    /** 把一句口语/文字解析成金额与分类，并回填记账表单。 */
-    private void applyParsedText(String text) {
-        VoiceInputParser.Parsed parsed = VoiceInputParser.parse(text);
-        if (parsed.amount > 0) amountInput.setText(String.valueOf(parsed.amount));
-        noteInput.setText(text);
+    @Override
+    public List<String> voiceAccountNames() {
+        List<String> names = new ArrayList<>();
+        for (Account a : accountRepo.list()) names.add(a.name);
+        return names;
+    }
+
+    @Override
+    public List<String> voiceCategoryNames() {
+        List<String> names = new ArrayList<>();
+        for (Category c : isIncome ? catRepo.listIncome() : catRepo.listExpense()) names.add(c.name);
+        return names;
+    }
+
+    /**
+     * 回填解析结果：金额写进输入框、备注只留有用的一段、分类高亮到对应分类框、
+     * 账户按钮切到说到的那个账户。没说到的段保持原样，不清空。
+     */
+    @Override
+    public void onVoiceParsed(VoiceInputParser.Parsed parsed) {
+        if (parsed.amount > 0) amountInput.setText(VoiceEntryDialog.amountText(parsed.amount));
+        noteInput.setText(parsed.note);
+
+        // 分类：命中就高亮对应分类框（matchCategory 找不到时会回退「其他」）
         matchCategory(parsed.categoryName);
-        Toast.makeText(requireContext(), "已解析：" + text, Toast.LENGTH_SHORT).show();
+        if (selectedCategoryId != null) selectCategory(selectedCategoryId);
+
+        // 账户：只有说到的账户确实存在于本机时才切换
+        if (parsed.accountName != null) {
+            for (Account a : accountRepo.list()) {
+                if (parsed.accountName.equals(a.name)) {
+                    selectedAccountId = a.clientId;
+                    break;
+                }
+            }
+            refreshAccountButton();
+        }
+
+        Toast.makeText(requireContext(),
+                VoiceEntryDialog.describe(parsed, categoryNameOf(selectedCategoryId),
+                        accountNameOf(selectedAccountId)),
+                Toast.LENGTH_LONG).show();
     }
 
-    // ---------- 截图记账（OCR 识别金额 + 用户自选分类/账户） ----------
+    /** 截图识别的中间结果：本地 OCR 与 AI 两条路都先归一到这里，再交给同一个确认框。 */
+    private static final class BillSuggestion {
+        double amount;
+        /** 备注（本地是商户名，AI 是 merchant 字段）。 */
+        String note;
+        /** 分类名，可为 null；由 matchCategory 落到本机分类。 */
+        String categoryName;
+        /** 账户名，可为 null；为 null 时保持当前所选账户。 */
+        String accountName;
+        /** 是否收入（退款/收款）：AI 会判断，本地路径恒为 false。 */
+        boolean income;
+    }
+
+    // ---------- 截图记账（配了 API Key 走 AI 多模态，否则用本机离线识别） ----------
     private void pickScreenshot() {
+        // 首次使用且没配 API Key：提示一次可以改用 AI 识别（本机识别金额/分类容易认不准）
+        if (BillAiRecognizer.shouldHint(requireContext())) {
+            BillAiRecognizer.markHinted(requireContext());
+            new AlertDialog.Builder(requireContext())
+                    .setTitle("截图记账")
+                    .setMessage("默认用本机离线识别（ML Kit + 规则）。账单页上数字很多时，"
+                            + "金额和分类容易认错。\n\n填入自己的 API Key 就能改用多模态大模型识别，"
+                            + "模型需要支持图像输入（如 gpt-4o-mini）。")
+                    .setPositiveButton("配置 AI 识别",
+                            (d, w) -> AiSettingsDialog.show(requireContext(), null))
+                    .setNegativeButton("先用本地识别", (d, w) -> launchImagePicker())
+                    .show();
+            return;
+        }
+        launchImagePicker();
+    }
+
+    private void launchImagePicker() {
         Intent intent;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             // Android 13+ 系统照片选择器，无需相册读取权限
@@ -408,6 +532,15 @@ public class RecordFragment extends Fragment {
     }
 
     private void runOcr(Uri uri) {
+        if (BillAiRecognizer.isAvailable(requireContext())) {
+            runAiOcr(uri);
+        } else {
+            runLocalOcr(uri);
+        }
+    }
+
+    /** 本机离线识别：ML Kit 出文本，再用规则解析金额与商户。 */
+    private void runLocalOcr(Uri uri) {
         if (screenshotOcr == null) screenshotOcr = new ScreenshotOcr(requireContext());
         Toast.makeText(requireContext(), "正在识别截图…", Toast.LENGTH_SHORT).show();
         screenshotOcr.recognize(uri, new ScreenshotOcr.Callback() {
@@ -419,7 +552,11 @@ public class RecordFragment extends Fragment {
                             Toast.LENGTH_LONG).show();
                     return;
                 }
-                showBillConfirmDialog(parsed, text);
+                BillSuggestion s = new BillSuggestion();
+                s.amount = parsed.amount;
+                s.note = parsed.merchant;
+                s.categoryName = parsed.merchant;   // 按商户名猜分类（本地路径一直如此）
+                showBillConfirmDialog(s, text);
             }
 
             @Override
@@ -429,8 +566,46 @@ public class RecordFragment extends Fragment {
         });
     }
 
-    /** 识别结果确认框：金额/备注可改，分类与账户由用户自选。 */
-    private void showBillConfirmDialog(BillTextParser.Result parsed, String rawText) {
+    /** AI 识别：截图整张交给多模态模型，直接拿金额/账户/分类；失败就回退本地识别。 */
+    private void runAiOcr(Uri uri) {
+        if (billAiRecognizer == null) billAiRecognizer = new BillAiRecognizer(requireContext());
+        Toast.makeText(requireContext(), "正在用 AI 识别截图…", Toast.LENGTH_SHORT).show();
+        billAiRecognizer.recognize(uri, voiceAccountNames(), voiceCategoryNames(),
+                new BillAiRecognizer.Callback() {
+                    @Override
+                    public void onResult(BillAiPrompt.Result result) {
+                        if (!isAdded() || getActivity() == null || getActivity().isFinishing()) return;
+                        if (!result.hasAmount()) {
+                            Toast.makeText(requireContext().getApplicationContext(), "AI 没识别到金额，改用本机识别",
+                                    Toast.LENGTH_LONG).show();
+                            runLocalOcr(uri);
+                            return;
+                        }
+                        BillSuggestion s = new BillSuggestion();
+                        s.amount = result.amount;
+                        s.note = result.merchant;
+                        s.categoryName = result.categoryName;
+                        s.accountName = result.accountName;
+                        s.income = result.isIncome();
+                        showBillConfirmDialog(s, "AI 识别"
+                                + (result.merchant == null ? "" : " · " + result.merchant));
+                    }
+
+                    @Override
+                    public void onError(String message) {
+                        if (!isAdded() || getActivity() == null || getActivity().isFinishing()) return;
+                        Toast.makeText(requireContext().getApplicationContext(), message + "，改用本机识别",
+                                Toast.LENGTH_LONG).show();
+                        runLocalOcr(uri);
+                    }
+                });
+    }
+
+    /**
+     * 识别结果确认框：金额 / 备注可改，分类与账户按识别结果**预选**（用户仍可改）。
+     * 本地 OCR 与 AI 两条路都归到这里。
+     */
+    private void showBillConfirmDialog(BillSuggestion suggestion, String rawText) {
         View view = LayoutInflater.from(requireContext()).inflate(R.layout.dialog_bill_confirm, null, false);
         EditText amountView = view.findViewById(R.id.bill_amount);
         EditText noteView = view.findViewById(R.id.bill_note);
@@ -439,15 +614,31 @@ public class RecordFragment extends Fragment {
         TextView rawView = view.findViewById(R.id.bill_raw_text);
 
         rawView.setText(rawText);
-        amountView.setText(trimZeros(parsed.amount));
-        noteView.setText(parsed.merchant == null ? "" : parsed.merchant);
 
-        // 分类先按商户名猜一个，用户可改
-        matchCategory(parsed.merchant == null ? "其他" : parsed.merchant);
+        // 收入/支出必须在选分类之前切：收支两套分类是分开的，切换会重建分类栏并清空已选分类
+        if (suggestion.income != isIncome) {
+            incomeSwitch.setChecked(suggestion.income);
+        }
+
+        amountView.setText(VoiceEntryDialog.amountText(suggestion.amount));
+        noteView.setText(suggestion.note == null ? "" : suggestion.note);
+
+        // 分类：识别到了就用它，没识别到就按商户名猜；matchCategory 找不到时会回退「其他」
+        matchCategory(suggestion.categoryName == null ? "其他" : suggestion.categoryName);
+
+        // 账户：识别到了就切过去，否则保持当前选择
+        if (suggestion.accountName != null) {
+            for (Account a : accountRepo.list()) {
+                if (suggestion.accountName.equals(a.name)) {
+                    selectedAccountId = a.clientId;
+                    break;
+                }
+            }
+        }
+        if (selectedAccountId == null) refreshAccountButton();
+
         categoryButton.setText("分类：" + categoryNameOf(selectedCategoryId));
         categoryButton.setOnClickListener(x -> pickCategoryForBill(categoryButton));
-
-        if (selectedAccountId == null) refreshAccountButton();
         accountPickButton.setText("账户：" + accountNameOf(selectedAccountId));
         accountPickButton.setOnClickListener(x -> pickAccountForBill(accountPickButton));
 
@@ -466,7 +657,7 @@ public class RecordFragment extends Fragment {
                         Toast.makeText(requireContext(), "金额需大于 0", Toast.LENGTH_SHORT).show();
                         return;
                     }
-                    amountInput.setText(trimZeros(amount));
+                    amountInput.setText(VoiceEntryDialog.amountText(amount));
                     noteInput.setText(noteView.getText().toString().trim());
                     save();
                 })
@@ -522,14 +713,6 @@ public class RecordFragment extends Fragment {
             if (clientId.equals(a.clientId)) return a.name;
         }
         return "请选择";
-    }
-
-    /** 27.50 → "27.5"；整数金额不带小数点。 */
-    private static String trimZeros(double value) {
-        if (value == Math.floor(value) && !Double.isInfinite(value)) {
-            return String.valueOf((long) value);
-        }
-        return String.valueOf(value);
     }
 
     // ---------- 保存 ----------

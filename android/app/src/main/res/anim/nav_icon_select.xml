@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  点击底部导航标签时，**图标**的选中脉冲：放大到 1.10 再回落，共 170ms。
+
+  只动画图标，不动整项：整项一起放大非常显眼，而且标签文字跟着缩放会在窄项里溢出。
+  幅度 1.10 是刻意压低的 —— 它要表达「刚刚点的是它」，不是「弹一下」。
+-->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@android:anim/decelerate_interpolator">
+
+    <scale
+        android:duration="85"
+        android:fromXScale="1.0"
+        android:toXScale="1.10"
+        android:fromYScale="1.0"
+        android:toYScale="1.10"
+        android:pivotX="50%"
+        android:pivotY="50%" />
+
+    <scale
+        android:duration="85"
+        android:startOffset="85"
+        android:fromXScale="1.10"
+        android:toXScale="1.0"
+        android:fromYScale="1.10"
+        android:toYScale="1.0"
+        android:pivotX="50%"
+        android:pivotY="50%" />
+</set>

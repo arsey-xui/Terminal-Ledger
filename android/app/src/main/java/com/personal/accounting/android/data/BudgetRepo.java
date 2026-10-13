@@ -14,7 +14,7 @@ public class BudgetRepo {
     private final DatabaseHelper helper;
 
     public BudgetRepo(Context context) {
-        helper = new DatabaseHelper(context);
+        helper = DatabaseHelper.getInstance(context);
     }
 
     private SQLiteDatabase rw() {
@@ -46,6 +46,7 @@ public class BudgetRepo {
     }
 
     public Budget findByKey(String categoryClientId, int year, int month) {
+        if (categoryClientId == null) return null;
         try (Cursor c = rw().query("budget", null,
                 "category_client_id=? AND budget_year=? AND budget_month=?",
                 new String[]{categoryClientId, String.valueOf(year), String.valueOf(month)}, null, null, null)) {
@@ -59,6 +60,7 @@ public class BudgetRepo {
      * LWW 合并 {@link #upsertLww} 仍用 {@link #findByKey}（需要能看见墓碑以比较 lastModified）。
      */
     public Budget findActiveByKey(String categoryClientId, int year, int month) {
+        if (categoryClientId == null) return null;
         try (Cursor c = rw().query("budget", null,
                 "category_client_id=? AND budget_year=? AND budget_month=? AND deleted=0",
                 new String[]{categoryClientId, String.valueOf(year), String.valueOf(month)}, null, null, null)) {
@@ -96,13 +98,13 @@ public class BudgetRepo {
 
     private Budget fromCursor(Cursor c) {
         Budget x = new Budget();
-        x.clientId = c.getString(0);
-        x.categoryClientId = c.getString(1);
-        x.year = c.getInt(2);
-        x.month = c.getInt(3);
-        x.amountLimit = c.getDouble(4);
-        x.lastModified = c.getLong(5);
-        x.deleted = c.getInt(6) == 1;
+        x.clientId = c.getString(c.getColumnIndexOrThrow("client_id"));
+        x.categoryClientId = c.getString(c.getColumnIndexOrThrow("category_client_id"));
+        x.year = c.getInt(c.getColumnIndexOrThrow("budget_year"));
+        x.month = c.getInt(c.getColumnIndexOrThrow("budget_month"));
+        x.amountLimit = c.getDouble(c.getColumnIndexOrThrow("amount_limit"));
+        x.lastModified = c.getLong(c.getColumnIndexOrThrow("last_modified"));
+        x.deleted = c.getInt(c.getColumnIndexOrThrow("deleted")) == 1;
         return x;
     }
 }

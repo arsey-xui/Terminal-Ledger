@@ -1,15 +1,60 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 鹰角网络 Arknights 机能工业风（浅色版）：浅灰底深灰字 + 酸橙绿点缀 -->
+    <!--
+      鹰角网络 (Hypergryph) 机能工业风 —— 浅色基底。
+      配色哲学：黑白灰为绝对主色，只在交互/状态处用酸橙绿点缀。
+      深色基底见 values-night/colors.xml：**同一套语义角色**，只把基底翻到近黑。
+      注意 #1A1A1A 与 #F5F5F5 在两个基底里角色互换（深色下前者当底、后者当字），
+      这是保持同一套色板又不让深色发灰的关键。
+    -->
     <color name="primary">#C0FF00</color>
     <color name="primary_dark">#A6D800</color>
     <color name="accent">#C0FF00</color>
+
+    <!-- 舞台底与面板 -->
     <color name="background">#F5F5F5</color>
     <color name="surface">#FFFFFF</color>
     <color name="card">#FAFAFA</color>
+
+    <!-- 语义色 -->
     <color name="income">#2E9E24</color>
     <color name="expense">#D64545</color>
+    <color name="warning">#A07800</color>
+
+    <!-- 三级文字 -->
     <color name="text_primary">#1A1A1A</color>
     <color name="text_secondary">#8C8C8C</color>
+
+    <!-- 1px 细线：这套设计语言的骨架 -->
     <color name="hairline">#D9D9D9</color>
+
+    <!-- 图表：坐标轴、网格线、无数据提示 -->
+    <color name="chart_text">#6B6B6B</color>
+    <color name="chart_axis">#8C8C8C</color>
+    <color name="chart_grid">#EDEDED</color>
+    <!-- 网格线：与 hairline 同值，单独命名是为了让图表的线宽/色值能独立调 -->
+    <color name="chart_line">#D9D9D9</color>
+    <color name="no_data">#A6A6A6</color>
+    <!-- 折线图下方的填充（低不透明度强调色） -->
+    <color name="chart_fill">#4DC0FF00</color>
+
+    <!-- 热力图：无支出的格子（必须接近底色，深色下不能用浅灰） -->
+    <color name="heatmap_empty">#EDEDED</color>
+
+    <!--
+      饼图标签：分类名白字 + 描边、金额黑字。
+      PieSliceLabelRenderer 会按扇区颜色自动选反色（浅扇区用黑字、深扇区用白字），
+      所以这两个值是「备选对」，不是固定用途。
+    -->
+    <color name="pie_label_name">#FFFFFF</color>
+    <color name="pie_label_value">#000000</color>
+    <!-- 深色字配浅描边、浅色字配深描边，保证任何扇区上标签都有轮廓 -->
+    <color name="pie_label_halo_for_dark">#88FFFFFF</color>
+    <color name="pie_label_halo_for_light">#66000000</color>
+
+    <!-- 分类按钮等控件面 -->
+    <color name="chip_background">#FFFFFF</color>
+    <color name="chip_stroke">#D9D9D9</color>
+    <!-- 分类按钮选中态（酸橙绿底）上的文字：两个基底都固定黑 -->
+    <color name="chip_text_selected">#000000</color>
 </resources>

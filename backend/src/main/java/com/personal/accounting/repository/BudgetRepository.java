@@ -16,6 +16,8 @@ public interface BudgetRepository extends JpaRepository<Budget, Long> {
 
     Optional<Budget> findByCategoryClientIdAndYearAndMonth(String categoryClientId, int year, int month);
 
+    List<Budget> findByYearAndMonthAndDeletedFalse(int year, int month);
+
     Page<Budget> findByLastModifiedGreaterThan(Long lastModified, Pageable pageable);
 
     @Query("select b from Budget b where b.lastModified > :ts or (b.lastModified = :ts and b.id > :id) order by b.lastModified asc, b.id asc")

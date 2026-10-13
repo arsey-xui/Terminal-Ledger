@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  底部导航项按压：整块压暗到 0.55 再恢复，共 160ms。
+
+  为什么动画的是导航项的 View 而不是 MenuItem 的图标：图标的着色由 itemIconTint 控制，
+  直接给图标 drawable 做透明度动画不落地（还会波及共享同一 drawable 的其它项）。
+  动画 View 的 alpha 一定能看到。
+
+  这是**瞬时状态切换**，不是扩散动画 —— 与按钮的填充反转是同一种语言，
+  用来补上圆形水波纹被去掉后缺失的按压即时感。
+-->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@android:anim/linear_interpolator">
+
+    <alpha
+        android:duration="80"
+        android:fromAlpha="1.0"
+        android:toAlpha="0.55" />
+
+    <alpha
+        android:duration="80"
+        android:startOffset="80"
+        android:fromAlpha="0.55"
+        android:toAlpha="1.0" />
+</set>

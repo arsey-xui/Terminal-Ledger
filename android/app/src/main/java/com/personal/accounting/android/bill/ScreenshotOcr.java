@@ -2,7 +2,6 @@ package com.personal.accounting.android.bill;
 
 import android.content.Context;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
@@ -13,8 +12,7 @@ import com.google.mlkit.vision.text.Text;
 import com.google.mlkit.vision.text.TextRecognition;
 import com.google.mlkit.vision.text.TextRecognizer;
 import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions;
-
-import java.io.InputStream;
+import com.personal.accounting.android.util.BitmapUtils;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -46,7 +44,7 @@ public final class ScreenshotOcr {
     public void recognize(Uri uri, Callback callback) {
         executor.execute(() -> {
             try {
-                Bitmap bitmap = decodeDownscaled(uri);
+                Bitmap bitmap = BitmapUtils.decodeDownscaled(context, uri, MAX_EDGE);
                 if (bitmap == null) {
                     postError(callback, "无法读取这张图片");
                     return;
@@ -90,25 +88,5 @@ public final class ScreenshotOcr {
             }
         }
         return sb.toString();
-    }
-
-    /** 只读图片头，按最长边 MAX_EDGE 采样解码，避免整张大图进内存。 */
-    private Bitmap decodeDownscaled(Uri uri) throws Exception {
-        BitmapFactory.Options bounds = new BitmapFactory.Options();
-        bounds.inJustDecodeBounds = true;
-        try (InputStream in = context.getContentResolver().openInputStream(uri)) {
-            BitmapFactory.decodeStream(in, null, bounds);
-        }
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null;
-
-        int sample = 1;
-        int maxSide = Math.max(bounds.outWidth, bounds.outHeight);
-        while (maxSide / sample > MAX_EDGE * 2) sample *= 2;
-
-        BitmapFactory.Options opts = new BitmapFactory.Options();
-        opts.inSampleSize = sample;
-        try (InputStream in = context.getContentResolver().openInputStream(uri)) {
-            return BitmapFactory.decodeStream(in, null, opts);
-        }
     }
 }

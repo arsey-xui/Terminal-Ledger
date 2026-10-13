@@ -14,6 +14,7 @@ import com.personal.accounting.repository.TransactionRepository;
 import com.personal.accounting.service.ReportService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -27,6 +28,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
+@Transactional(readOnly = true)
 @RequiredArgsConstructor
 public class ReportServiceImpl implements ReportService {
 
@@ -40,8 +42,12 @@ public class ReportServiceImpl implements ReportService {
         LocalDate end = start.withDayOfMonth(start.lengthOfMonth());
         List<Transaction> txns = transactionRepository.findByDeletedFalseAndDateBetween(start, end);
 
-        BigDecimal income = sumByType(txns, "INCOME");
-        BigDecimal expense = sumByType(txns, "EXPENSE");
+        BigDecimal income = BigDecimal.ZERO;
+        BigDecimal expense = BigDecimal.ZERO;
+        for (Transaction t : txns) {
+            if ("INCOME".equals(t.getType())) income = income.add(t.getAmount());
+            else if ("EXPENSE".equals(t.getType())) expense = expense.add(t.getAmount());
+        }
 
         MonthSummaryDto dto = new MonthSummaryDto();
         dto.setYear(year);
@@ -127,24 +133,22 @@ public class ReportServiceImpl implements ReportService {
                 .stream().collect(Collectors.toMap(Category::getClientId, Function.identity(), (a, b) -> a));
 
         List<BudgetProgressDto> result = new ArrayList<>();
-        for (Budget b : budgetRepository.findByLastModifiedGreaterThan(Long.MIN_VALUE, org.springframework.data.domain.Pageable.unpaged())) {
-            if (b.getYear().equals(year) && b.getMonth() == month && !Boolean.TRUE.equals(b.getDeleted())) {
-                BudgetProgressDto d = new BudgetProgressDto();
-                d.setCategoryClientId(b.getCategoryClientId());
-                Category c = catMap.get(b.getCategoryClientId());
-                d.setCategoryName(c != null ? c.getName() : "未分类");
-                d.setCategoryIcon(c != null ? c.getIcon() : null);
-                d.setBudget(b.getAmountLimit());
-                BigDecimal used = usedByCat.getOrDefault(b.getCategoryClientId(), BigDecimal.ZERO);
-                d.setUsed(used);
-                long pct = b.getAmountLimit().compareTo(BigDecimal.ZERO) > 0
-                        ? used.multiply(BigDecimal.valueOf(100)).divide(b.getAmountLimit(), 0, RoundingMode.HALF_UP).longValue()
-                        : 0L;
-                d.setPercent(pct);
-                if (pct >= 100) d.setAlertLevel("RED");
-                else if (pct >= 90) d.setAlertLevel("YELLOW");
-                result.add(d);
-            }
+        for (Budget b : budgetRepository.findByYearAndMonthAndDeletedFalse(year, month)) {
+            BudgetProgressDto d = new BudgetProgressDto();
+            d.setCategoryClientId(b.getCategoryClientId());
+            Category c = catMap.get(b.getCategoryClientId());
+            d.setCategoryName(c != null ? c.getName() : "未分类");
+            d.setCategoryIcon(c != null ? c.getIcon() : null);
+            d.setBudget(b.getAmountLimit());
+            BigDecimal used = usedByCat.getOrDefault(b.getCategoryClientId(), BigDecimal.ZERO);
+            d.setUsed(used);
+            long pct = b.getAmountLimit().compareTo(BigDecimal.ZERO) > 0
+                    ? used.multiply(BigDecimal.valueOf(100)).divide(b.getAmountLimit(), 0, RoundingMode.HALF_UP).longValue()
+                    : 0L;
+            d.setPercent(pct);
+            if (pct >= 100) d.setAlertLevel("RED");
+            else if (pct >= 90) d.setAlertLevel("YELLOW");
+            result.add(d);
         }
         return result;
     }

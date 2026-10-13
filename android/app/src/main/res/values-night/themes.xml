@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      深色基底下的主题覆盖（跟随系统深色模式）。
+
+      只改「必须随基底翻转」的两项：状态栏/导航栏图标必须在近黑底上转为浅色，
+      其余（背景、文字、强调色）全部走 values-night 里的配色，不在这里重复声明 ——
+      重复声明就会重蹈 windowBackground 被写死的老路。
+    -->
+    <style name="Theme.PersonalAccounting" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorPrimaryDark">@color/primary_dark</item>
+        <item name="colorAccent">@color/accent</item>
+        <item name="colorSecondary">@color/accent</item>
+        <item name="colorOnPrimary">#000000</item>
+        <item name="colorOnSecondary">#000000</item>
+        <item name="colorControlActivated">@color/accent</item>
+        <item name="android:statusBarColor">@color/background</item>
+        <item name="android:navigationBarColor">@color/background</item>
+        <!-- 近黑底上状态栏图标要浅色 -->
+        <item name="android:windowLightStatusBar">false</item>
+        <!-- 同上：自带的深色配色是调好的，不接受系统强转 -->
+        <item name="android:forceDarkAllowed">false</item>
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <!-- 同浅色的那份：hint 与光标色不能留给父主题 -->
+        <item name="android:textColorHint">@color/text_secondary</item>
+        <item name="colorControlNormal">@color/text_secondary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+        <item name="materialButtonStyle">@style/Widget.App.Button</item>
+    </style>
+</resources>

@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  图表点击时的数值气泡：深色半透明底 + 白字，深浅两种模式下都用这一套。
+  深色底上是「更深的气泡 + 白字」，悬浮感反而更强；
+  如果跟着主题走，气泡会和深色图表糊在一起。
+-->
 <TextView xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/marker_text"
     android:layout_width="wrap_content"

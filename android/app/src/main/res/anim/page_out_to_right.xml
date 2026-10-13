@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  往左切时**旧页**的动作：向右推出屏幕。
+
+  与 page_in_from_left 同时播放，两页并排右移一格。
+-->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@android:anim/decelerate_interpolator">
+
+    <alpha
+        android:duration="280"
+        android:fromAlpha="1.0"
+        android:toAlpha="0.0" />
+
+    <translate
+        android:duration="280"
+        android:fromXDelta="0"
+        android:toXDelta="100%p" />
+</set>

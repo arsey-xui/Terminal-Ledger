@@ -10,6 +10,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -74,6 +75,7 @@ public class TransactionController {
         return ApiResponse.ok(TransactionDto.from(t), "已记账");
     }
 
+    @Transactional
     @PutMapping("/{clientId}")
     public ApiResponse<TransactionDto> update(@PathVariable String clientId, @RequestBody TransactionDto dto) {
         return repository.findByClientId(clientId)
@@ -87,6 +89,7 @@ public class TransactionController {
                 .orElseGet(() -> ApiResponse.fail("流水不存在"));
     }
 
+    @Transactional
     @DeleteMapping("/{clientId}")
     public ApiResponse<Void> delete(@PathVariable String clientId) {
         repository.findByClientId(clientId).ifPresent(t -> {

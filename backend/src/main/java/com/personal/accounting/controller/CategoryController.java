@@ -5,6 +5,7 @@ import com.personal.accounting.dto.CategoryDto;
 import com.personal.accounting.entity.Category;
 import com.personal.accounting.repository.CategoryRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
@@ -24,6 +25,7 @@ public class CategoryController {
                 .map(CategoryDto::from).toList());
     }
 
+    @Transactional
     @PostMapping
     public ApiResponse<CategoryDto> create(@RequestBody CategoryDto dto) {
         Category c = new Category();
@@ -33,6 +35,7 @@ public class CategoryController {
         return ApiResponse.ok(CategoryDto.from(c), "已创建");
     }
 
+    @Transactional
     @PutMapping("/{clientId}")
     public ApiResponse<CategoryDto> update(@PathVariable String clientId, @RequestBody CategoryDto dto) {
         return repository.findByClientId(clientId)
@@ -45,6 +48,7 @@ public class CategoryController {
                 .orElseGet(() -> ApiResponse.fail("分类不存在"));
     }
 
+    @Transactional
     @DeleteMapping("/{clientId}")
     public ApiResponse<Void> delete(@PathVariable String clientId) {
         repository.findByClientId(clientId).ifPresent(c -> {

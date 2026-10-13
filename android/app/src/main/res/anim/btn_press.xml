@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  按钮按压：按下时轻微内缩（scale 0.97 → 1.0）+ 填充反转，120ms。
+
+  填充反转由 backgroundTint 的状态选择器负责（瞬时），这里补的是**下降沿的加速度**：
+  没有它的时候，填充是「啪」地一下换掉，看着像闪了一下而不是「被按下去」。
+  0.97 的幅度刚好能感到机械下沉，又不会变成橡皮按钮。
+-->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@android:anim/linear_interpolator"
+    android:fillAfter="false">
+
+    <scale
+        android:duration="120"
+        android:fromXScale="1.0"
+        android:toXScale="0.97"
+        android:fromYScale="1.0"
+        android:toYScale="0.97"
+        android:pivotX="50%"
+        android:pivotY="50%" />
+</set>

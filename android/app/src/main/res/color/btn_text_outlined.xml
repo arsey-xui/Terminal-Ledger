@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  描边按钮的文字色：默认酸橙绿（压在透明底上），按下转黑（压在酸橙绿填充上）。
+  与 btn_tint_outlined.xml 必须成对修改，否则会在酸橙绿底上留酸橙绿字。
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true" android:color="#000000" />
+    <item android:state_enabled="false" android:color="@color/text_secondary" />
+    <item android:color="@color/primary" />
+</selector>

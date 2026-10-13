@@ -100,11 +100,12 @@
             android:textStyle="bold" />
 
         <TextView
+            android:id="@+id/pie_title"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
             android:text="支出分类占比" />
-        <com.github.mikephil.charting.charts.PieChart
+        <com.personal.accounting.android.ui.TrendPieChart
             android:id="@+id/pie"
             android:layout_width="match_parent"
             android:layout_height="330dp" />
@@ -113,8 +114,27 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
+            android:text="跨月趋势" />
+        <Button
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:id="@+id/btn_trend_scope"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="统计范围：支出（点击切换）"
+            android:textColor="@color/text_primary"
+            app:cornerRadius="0dp"
+            app:strokeColor="@color/accent" />
+        <com.personal.accounting.android.ui.TrendBarChart
+            android:id="@+id/month_trend"
+            android:layout_width="match_parent"
+            android:layout_height="200dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
             android:text="近30天每日支出" />
-        <com.github.mikephil.charting.charts.LineChart
+        <com.personal.accounting.android.ui.TrendLineChart
             android:id="@+id/trend"
             android:layout_width="match_parent"
             android:layout_height="200dp" />

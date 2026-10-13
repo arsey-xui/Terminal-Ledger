@@ -3,6 +3,7 @@ package com.personal.accounting.android.update;
 import android.content.Context;
 import android.util.Log;
 
+import com.google.gson.Gson;
 import com.personal.accounting.android.sync.ApiClient;
 
 import java.util.List;
@@ -16,6 +17,7 @@ import java.util.List;
 public final class UpdateClient {
 
     private static final String TAG = "UpdateClient";
+    private static final Gson GSON = new Gson();
 
     public static final String ENGINE_GITHUB = "github";
 
@@ -85,7 +87,7 @@ public final class UpdateClient {
                 return new Result(null, "GitHub 没有返回版本信息（检查仓库名与是否已创建 Release）");
             }
             Release release = fromGithub(gh);
-            UpdateConfig.saveCache(context, new com.google.gson.Gson().toJson(gh));
+            UpdateConfig.saveCache(context, GSON.toJson(gh));
             return new Result(release, null);
         } catch (Exception e) {
             Log.w(TAG, "GitHub 查询失败", e);
@@ -101,7 +103,7 @@ public final class UpdateClient {
     private static Release parseCached(String json) {
         try {
             VersionPayloads.GithubRelease gh =
-                    new com.google.gson.Gson().fromJson(json, VersionPayloads.GithubRelease.class);
+                    GSON.fromJson(json, VersionPayloads.GithubRelease.class);
             return gh == null ? null : fromGithub(gh);
         } catch (Exception e) {
             return null;

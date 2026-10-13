@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  工业风按压反馈（描边按钮）：默认透明底 + 酸橙绿描边，按下反转为**酸橙绿填充**。
+  与实心按钮是同一种语言：按下 = 填充与描边的反转，没有水波纹扩散。
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true" android:color="@color/primary" />
+    <item android:state_enabled="false" android:color="@android:color/transparent" />
+    <item android:color="@android:color/transparent" />
+</selector>

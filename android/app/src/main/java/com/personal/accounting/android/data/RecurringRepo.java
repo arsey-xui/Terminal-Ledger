@@ -28,7 +28,7 @@ public class RecurringRepo {
 
     public RecurringRepo(Context context) {
         this.context = context.getApplicationContext();
-        helper = new DatabaseHelper(context);
+        helper = DatabaseHelper.getInstance(context);
     }
 
     private SQLiteDatabase rw() {
@@ -48,6 +48,7 @@ public class RecurringRepo {
     }
 
     public RecurringRule find(String clientId) {
+        if (clientId == null) return null;
         try (Cursor c = rw().query("recurring_rule", null, "client_id=?",
                 new String[]{clientId}, null, null, null)) {
             return c.moveToFirst() ? fromRule(c) : null;
@@ -152,6 +153,7 @@ public class RecurringRepo {
     }
 
     public RecurringPending findPending(String clientId) {
+        if (clientId == null) return null;
         try (Cursor c = rw().query("recurring_pending", null, "client_id=?",
                 new String[]{clientId}, null, null, null)) {
             return c.moveToFirst() ? fromPending(c) : null;

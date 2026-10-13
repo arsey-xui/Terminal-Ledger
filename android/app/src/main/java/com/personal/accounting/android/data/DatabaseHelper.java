@@ -19,7 +19,16 @@ import java.util.Map;
 public class DatabaseHelper extends SQLiteOpenHelper {
 
     private static final String DB_NAME = "accounting.db";
-    private static final int DB_VERSION = 2;
+    private static final int DB_VERSION = 3;
+
+    private static DatabaseHelper instance;
+
+    public static synchronized DatabaseHelper getInstance(Context context) {
+        if (instance == null) {
+            instance = new DatabaseHelper(context.getApplicationContext());
+        }
+        return instance;
+    }
 
     public DatabaseHelper(Context context) {
         super(context, DB_NAME, null, DB_VERSION);
@@ -50,6 +59,8 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 "last_modified INTEGER NOT NULL, deleted INTEGER DEFAULT 0, created_at TEXT, updated_at TEXT)");
         db.execSQL("CREATE INDEX idx_txn_date ON transaction_record(date)");
         db.execSQL("CREATE INDEX idx_txn_lm ON transaction_record(last_modified)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_txn_cat_date ON transaction_record(category_client_id, date)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_txn_acct_date ON transaction_record(account_client_id, date)");
 
         db.execSQL("CREATE TABLE budget (" +
                 "client_id TEXT PRIMARY KEY, category_client_id TEXT NOT NULL, budget_year INTEGER NOT NULL," +
@@ -160,7 +171,8 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         v.put("name", name);
         v.put("icon", icon);
         v.put("type", type);
-        v.put("created_at", String.valueOf(now));
+        // 必须是 ISO-8601：曾经写成 String.valueOf(now) 的毫秒数字，同步到后端会让整次推送 500
+        v.put("created_at", Timestamps.nowIso());
         upsertDefault(db, "category", v, now);
     }
 
@@ -171,7 +183,8 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         v.put("name", name);
         v.put("icon", icon);
         v.put("type", type);
-        v.put("created_at", String.valueOf(now));
+        // 同上：不要写毫秒数字
+        v.put("created_at", Timestamps.nowIso());
         upsertDefault(db, "accounts", v, now);
     }
 
@@ -223,9 +236,14 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        if (oldVersion == 1 && newVersion >= 2) {
-            // 1 -> 2：只新增周期记账的表，保留既有账本数据
+        if (oldVersion < 2) {
+            // 1 -> 2：新增周期记账的表
             createRecurringTables(db);
+        }
+        if (oldVersion < 3) {
+            // 2 -> 3：新增联合索引
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_txn_cat_date ON transaction_record(category_client_id, date)");
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_txn_acct_date ON transaction_record(account_client_id, date)");
             return;
         }
         // 其它/未知的结构变更：沿用原来的重建策略（个人记账数据可重新同步）
