@@ -39,6 +39,8 @@ public final class SyncConfig {
             p.load(r);
             String v = p.getProperty("base_url");
             if (v != null) BASE_URL = v.trim();
+            String t = p.getProperty("token");
+            if (t != null) TOKEN = t.trim();
         } catch (IOException e) {
             // 读取失败保持默认空
         }
@@ -60,6 +62,48 @@ public final class SyncConfig {
         Files.createDirectories(DATA_DIR);
         Properties p = new Properties();
         p.setProperty("base_url", v);
+        // 顺带把已存的密钥写回去，别让保存地址把 token 冲掉
+        if (!token().isEmpty()) p.setProperty("token", token());
+        try (Writer w = Files.newBufferedWriter(FILE, StandardCharsets.UTF_8)) {
+            p.store(w, "同步配置");
+        }
+    }
+
+    /**
+     * 共享密钥（对应后端 {@code accounting.sync.shared-secret}）。
+     *
+     * <p>留空表示后端没开校验，请求里就不带这个头。</p>
+     */
+    public static volatile String TOKEN = "";
+
+    /** 当前密钥（永不为 null）。 */
+    public static String token() {
+        return TOKEN == null ? "" : TOKEN.trim();
+    }
+
+    /** 保存共享密钥（写盘 + 更新静态值）。空串表示清掉。 */
+    public static void saveToken(String token) throws IOException {
+        String value = token == null ? "" : token.trim();
+        String previous = token();
+        TOKEN = value;
+        saveProperty("token", value, previous);
+    }
+
+    /** 写一个键值，保留文件里已有的其它键（base_url 与 token 互不覆盖）。 */
+    private static void saveProperty(String key, String value, String previous) throws IOException {
+        // 值没变就不写盘，理由同 saveBaseUrl：受限环境里写会失败，而写同样的值没有意义
+        if (value.equals(previous)) return;
+
+        Files.createDirectories(DATA_DIR);
+        Properties p = new Properties();
+        if (Files.exists(FILE)) {
+            try (Reader r = Files.newBufferedReader(FILE, StandardCharsets.UTF_8)) {
+                p.load(r);
+            } catch (IOException ignore) {
+                // 读不出来就当空文件，后面整体重写
+            }
+        }
+        p.setProperty(key, value);
         try (Writer w = Files.newBufferedWriter(FILE, StandardCharsets.UTF_8)) {
             p.store(w, "同步配置");
         }

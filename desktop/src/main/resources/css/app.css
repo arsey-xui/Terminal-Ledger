@@ -82,6 +82,9 @@
 .card {
     -fx-background-color: rgba(255, 255, 255, 0.45);
     -fx-padding: 14 20;
+    /* 卡片至少这么宽（保证一排看着整齐）；数字再长就让它把卡片撑开，
+       而不是把金额显示成省略号 —— 仪表盘上要读的就是这些数字。 */
+    -fx-min-width: 132;
     -fx-background-radius: 0;
     -fx-border-color: rgba(0, 0, 0, 0.10);
     -fx-border-width: 1;
@@ -245,14 +248,16 @@
   所以最亮的放在最前（大扇区配深字），最暗的两个只落在小扇区上。
   顺序与手机端 pie_palette.xml 保持一致。
 */
+/* 饼图分类色：与手机端 values/colors.xml 的 pie_1..pie_8 保持一致。
+   不用界面里的语义色（红=支出、绿=收入、灰=禁用），否则扇区颜色会和金额含义打架。 */
 .default-color0.chart-pie { -fx-pie-color: #C0FF00; }
-.default-color1.chart-pie { -fx-pie-color: #EDEDED; }
-.default-color2.chart-pie { -fx-pie-color: #8C8C8C; }
-.default-color3.chart-pie { -fx-pie-color: #D64545; }
-.default-color4.chart-pie { -fx-pie-color: #6B6B6B; }
-.default-color5.chart-pie { -fx-pie-color: #A6D800; }
-.default-color6.chart-pie { -fx-pie-color: #4A4A4A; }
-.default-color7.chart-pie { -fx-pie-color: #B0B0B0; }
+.default-color1.chart-pie { -fx-pie-color: #3F7F8C; }
+.default-color2.chart-pie { -fx-pie-color: #C98B5A; }
+.default-color3.chart-pie { -fx-pie-color: #4F6E99; }
+.default-color4.chart-pie { -fx-pie-color: #B5726B; }
+.default-color5.chart-pie { -fx-pie-color: #8E7FA8; }
+.default-color6.chart-pie { -fx-pie-color: #6E8C4A; }
+.default-color7.chart-pie { -fx-pie-color: #96897A; }
 .default-color0.chart-series-line { -fx-stroke: #C0FF00; -fx-stroke-width: 2px; }
 /* 数据点符号：外圈用主色、中心用底色，和手机端折线一样不做成白点 */
 .default-color0.chart-line-symbol { -fx-background-color: #C0FF00, #FAFAFA; }

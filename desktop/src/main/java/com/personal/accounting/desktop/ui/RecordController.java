@@ -31,6 +31,9 @@ public class RecordController {
 
     private final DataManager db = AppState.db();
 
+    /** 非 null 表示表单正在编辑这条流水：保存时沿用同一个 clientId（覆盖原记录）。 */
+    private com.personal.accounting.desktop.model.Transaction editing;
+
     @FXML
     public void initialize() {
         datePicker.setValue(LocalDate.now());
@@ -48,6 +51,16 @@ public class RecordController {
         colAmount.setCellValueFactory(d -> new ReadOnlyObjectWrapper<>(d.getValue().amount));
         colCategory.setCellValueFactory(d -> new ReadOnlyObjectWrapper<>(db.categoryName(d.getValue().categoryClientId)));
         colNote.setCellValueFactory(d -> new ReadOnlyObjectWrapper<>(d.getValue().note));
+
+        // 双击一行 = 编辑这一条（单击只做选中，避免和滚动、列选择打架）
+        table.setRowFactory(tv -> {
+            javafx.scene.control.TableRow<com.personal.accounting.desktop.model.Transaction> row =
+                    new javafx.scene.control.TableRow<>();
+            row.setOnMouseClicked(e -> {
+                if (e.getClickCount() == 2 && !row.isEmpty()) startEditing(row.getItem());
+            });
+            return row;
+        });
         loadTransactions();
     }
 
@@ -170,15 +183,17 @@ public class RecordController {
         Category cat = db.listCategories(type).stream().filter(c -> c.name.equals(catName)).findFirst().orElse(null);
         Account acc = db.listAccounts().stream().filter(a -> a.name.equals(accName)).findFirst().orElse(null);
 
-        Transaction t = new Transaction();
-        t.clientId = UUID.randomUUID().toString();
+        // 编辑时直接复用原对象：clientId / createdAt 保持不变，只改表单里的字段
+        boolean wasEditing = editing != null;
+        Transaction t = wasEditing ? editing : new Transaction();
+        if (!wasEditing) t.clientId = UUID.randomUUID().toString();
         t.date = datePicker.getValue() == null ? LocalDate.now() : datePicker.getValue();
         t.amount = amount;
         t.type = rbIncome.isSelected() ? "INCOME" : "EXPENSE";
         t.categoryClientId = cat == null ? null : cat.clientId;
         t.accountClientId = acc == null ? null : acc.clientId;
         t.note = noteField.getText();
-        t.source = "manual";
+        if (!wasEditing) t.source = "manual";
         t.lastModified = System.currentTimeMillis();
         t.deleted = false;
         db.upsertTransaction(t);
@@ -193,7 +208,165 @@ public class RecordController {
         amountField.clear();
         noteField.clear();
         loadTransactions();
-        new Alert(Alert.AlertType.INFORMATION, "已记账").show();
+        editing = null;
+        new Alert(Alert.AlertType.INFORMATION, wasEditing ? "已保存修改" : "已记账").show();
+    }
+
+    /** 把选中的流水填回表单。保存时沿用同一个 clientId，所以是覆盖而不是新增。 */
+    private void startEditing(com.personal.accounting.desktop.model.Transaction t) {
+        if (t == null) return;
+        editing = t;
+        amountField.setText(t.amount == null ? "" : t.amount.toPlainString());
+        noteField.setText(t.note == null ? "" : t.note);
+        datePicker.setValue(t.date);
+        if ("INCOME".equals(t.type)) {
+            rbIncome.setSelected(true);
+            loadCategories(true);
+        } else {
+            rbExpense.setSelected(true);
+            loadCategories(false);
+        }
+        categoryBox.setValue(db.categoryName(t.categoryClientId));
+        db.listAccounts().stream()
+                .filter(a -> a.clientId != null && a.clientId.equals(t.accountClientId))
+                .findFirst()
+                .ifPresent(a -> accountBox.setValue(a.name));
+        info("正在编辑 " + t.date + " 这笔；改完点「保存」，会覆盖原记录");
+    }
+
+    // ---------------- 模板 ----------------
+
+    /** 模板入口：套用已保存模板，或把当前表单存成模板、删除模板。 */
+    @FXML
+    public void onTemplate() {
+        java.util.List<com.personal.accounting.desktop.model.Template> templates = listTemplates();
+        java.util.ArrayList<String> choices = new java.util.ArrayList<>();
+        choices.add("＋ 把当前内容存为模板");
+        for (com.personal.accounting.desktop.model.Template t : templates) {
+            choices.add(t.name + "　" + t.amount + " 元");
+        }
+        choices.add("删除模板…");
+        javafx.scene.control.ChoiceDialog<String> dialog =
+                new javafx.scene.control.ChoiceDialog<>(choices.get(0), choices);
+        dialog.setTitle("模板");
+        dialog.setHeaderText("选一个模板套到表单上，或管理模板");
+        dialog.showAndWait().ifPresent(pick -> {
+            if (pick.startsWith("＋")) {
+                saveAsTemplate();
+            } else if (pick.startsWith("删除模板")) {
+                deleteTemplateFlow(templates);
+            } else {
+                int index = choices.indexOf(pick) - 1;
+                if (index >= 0 && index < templates.size()) applyTemplate(templates.get(index));
+            }
+        });
+    }
+
+    /** 未删除的模板，按名字排序。 */
+    private java.util.List<com.personal.accounting.desktop.model.Template> listTemplates() {
+        return db.listTemplatesModifiedSince(0).stream()
+                .filter(t -> !t.deleted)
+                .sorted(java.util.Comparator.comparing(t -> t.name == null ? "" : t.name))
+                .toList();
+    }
+
+    /** 套用模板：金额 / 收支 / 分类 / 账户 / 备注一起填回表单。 */
+    private void applyTemplate(com.personal.accounting.desktop.model.Template t) {
+        amountField.setText(t.amount == null ? "" : t.amount.toPlainString());
+        noteField.setText(t.note == null ? "" : t.note);
+        if ("INCOME".equals(t.type)) {
+            rbIncome.setSelected(true);
+            loadCategories(true);
+        } else {
+            rbExpense.setSelected(true);
+            loadCategories(false);
+        }
+        categoryBox.setValue(db.categoryName(t.categoryClientId));
+        db.listAccounts().stream()
+                .filter(a -> a.clientId != null && a.clientId.equals(t.accountClientId))
+                .findFirst()
+                .ifPresent(a -> accountBox.setValue(a.name));
+        info("已套用模板：" + t.name);
+    }
+
+    /** 把当前表单存成模板。模板记的是「怎么记」，不含日期。 */
+    private void saveAsTemplate() {
+        if (amountField.getText() == null || amountField.getText().isBlank()) {
+            warn("先填一个金额");
+            return;
+        }
+        if (categoryBox.getValue() == null) {
+            warn("先选一个分类");
+            return;
+        }
+        BigDecimal amount;
+        try {
+            amount = new BigDecimal(amountField.getText());
+        } catch (NumberFormatException e) {
+            warn("金额格式错误");
+            return;
+        }
+        javafx.scene.control.TextInputDialog dialog = new javafx.scene.control.TextInputDialog();
+        dialog.setTitle("存为模板");
+        dialog.setHeaderText("给这个模板起个名字，例如「房租」");
+        dialog.showAndWait().ifPresent(name -> {
+            String trimmed = name == null ? "" : name.trim();
+            if (trimmed.isEmpty()) {
+                warn("模板名不能为空");
+                return;
+            }
+            com.personal.accounting.desktop.model.Template t = new com.personal.accounting.desktop.model.Template();
+            t.clientId = UUID.randomUUID().toString();
+            t.name = trimmed;
+            t.amount = amount;
+            t.type = rbIncome.isSelected() ? "INCOME" : "EXPENSE";
+            Category cat = db.listCategories(t.type).stream()
+                    .filter(c -> c.name.equals(categoryBox.getValue())).findFirst().orElse(null);
+            t.categoryClientId = cat == null ? null : cat.clientId;
+            String accName = accountBox.getValue();
+            Account acc = db.listAccounts().stream()
+                    .filter(a -> a.name.equals(accName)).findFirst().orElse(null);
+            t.accountClientId = acc == null ? null : acc.clientId;
+            t.note = noteField.getText();
+            t.sortOrder = 0;
+            t.lastModified = System.currentTimeMillis();
+            t.deleted = false;
+            db.upsertTemplate(t);
+            syncNow();
+            info("已存为模板：" + trimmed);
+        });
+    }
+
+    /** 删除模板：置墓碑再同步，另一端才会跟着删掉。 */
+    private void deleteTemplateFlow(java.util.List<com.personal.accounting.desktop.model.Template> templates) {
+        if (templates.isEmpty()) {
+            warn("还没有模板");
+            return;
+        }
+        java.util.List<String> names = templates.stream().map(t -> t.name).toList();
+        javafx.scene.control.ChoiceDialog<String> dialog =
+                new javafx.scene.control.ChoiceDialog<>(names.get(0), names);
+        dialog.setTitle("删除模板");
+        dialog.setHeaderText("选一个要删除的模板");
+        dialog.showAndWait().ifPresent(name -> {
+            templates.stream().filter(t -> name.equals(t.name)).findFirst().ifPresent(t -> {
+                t.deleted = true;
+                t.lastModified = System.currentTimeMillis();
+                db.upsertTemplate(t);
+                syncNow();
+                info("已删除模板：" + name);
+            });
+        });
+    }
+
+    /** 写完本地数据后随手同步一次，失败静默。 */
+    private void syncNow() {
+        MainController.SYNC_EXECUTOR.submit(() -> {
+            try {
+                new SyncManager(db).sync();
+            } catch (Exception ignore) {
+            }
+        });
     }
 
     /** 删除选中的流水（软删除，可同步）。 */
@@ -205,6 +378,14 @@ public class RecordController {
             return;
         }
         db.deleteTransaction(sel.clientId);
+        // 删掉的正好是当前在编辑的那条：退出编辑态，免得保存时又把它写回去
+        if (editing != null && editing.clientId.equals(sel.clientId)) editing = null;
+        MainController.SYNC_EXECUTOR.submit(() -> {
+            try {
+                new SyncManager(db).sync();
+            } catch (Exception ignore) {
+            }
+        });
         loadTransactions();
         info("已删除流水：" + sel.date.format(DateTimeFormatter.ISO_LOCAL_DATE) + "  " + sel.amount + " 元");
     }

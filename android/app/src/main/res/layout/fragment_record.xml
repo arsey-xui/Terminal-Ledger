@@ -122,17 +122,30 @@
                 android:orientation="horizontal" />
         </HorizontalScrollView>
 
+        <!--
+          四个按钮等高对齐：填充按钮和描边按钮的 Material 默认上下 inset 不一样
+          （填充默认 6dp、描边 0dp），混在一行就会一个框高一个框矮。这里统一 inset、
+          统一 minHeight、统一单行文字，并关掉基线对齐，四块才会真正齐平。
+          长标签「语音输入 / 截图记账」给 3 份权重，两个字的给 2 份，避免被挤成两行。
+        -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:layout_marginTop="16dp">
+            android:layout_marginTop="16dp"
+            android:baselineAligned="false">
             <Button
                 style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                 android:id="@+id/btn_voice"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
+                android:layout_weight="3"
+                android:minHeight="44dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:fontFamily="monospace"
+                android:textSize="13sp"
                 android:text="@string/voice"
                 android:textColor="@color/text_primary"
                 app:cornerRadius="0dp"
@@ -142,7 +155,13 @@
                 android:id="@+id/btn_screenshot"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
+                android:layout_weight="3"
+                android:minHeight="44dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:fontFamily="monospace"
+                android:textSize="13sp"
                 android:text="截图记账"
                 android:textColor="@color/text_primary"
                 app:cornerRadius="0dp"
@@ -151,8 +170,30 @@
                 android:id="@+id/btn_save"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
+                android:layout_weight="2"
+                android:minHeight="44dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:fontFamily="monospace"
+                android:textSize="13sp"
                 android:text="@string/save" />
+            <Button
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:id="@+id/btn_template"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="2"
+                android:minHeight="44dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:fontFamily="monospace"
+                android:textSize="13sp"
+                android:text="模板"
+                android:textColor="@color/text_primary"
+                app:cornerRadius="0dp"
+                app:strokeColor="@color/accent" />
         </LinearLayout>
 
         <!-- 本月概览卡片（填充分页空白） -->

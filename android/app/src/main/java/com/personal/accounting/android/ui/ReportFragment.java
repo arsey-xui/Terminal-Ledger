@@ -123,13 +123,22 @@ public class ReportFragment extends Fragment {
         super.onHiddenChanged(hidden);
         if (hidden) return;
         // 延迟一帧：此刻事务刚生效，等布局稳定后再重绘，生长动画才动得起来
-        main.post(this::replayChartAnimations);
+        main.post(this::refreshOnReturn);
     }
 
-    /** 重绘三张带动画的图表，让生长动画重新播放。 */
-    private void replayChartAnimations() {
+    /**
+     * 切回报表页时整页重算。
+     *
+     * <p>以前这里只重绘三张图（为了重播生长动画），顶部「收入 / 支出 / 结余」、预算和热力图
+     * 都还停在进入页面时的数值：刚记的那笔在记账页和流水页都有了，报表页却纹丝不动。
+     * 现在整页按最新数据重算，图表顺带把生长动画再播一遍。</p>
+     */
+    private void refreshOnReturn() {
         View v = getView();
         if (v == null) return;
+        renderSummary(v);
+        renderBudget(v);
+        renderHeatmap(v.findViewById(R.id.heatmap_grid));
         renderPie(v.findViewById(R.id.pie));
         renderMonthTrend(v.findViewById(R.id.month_trend));
         renderTrend(v.findViewById(R.id.trend));
@@ -214,13 +223,43 @@ public class ReportFragment extends Fragment {
 
     private void renderSummary(View v) {
         LocalDate now = LocalDate.now();
-        double[] s = txRepo.monthSummary(now.getYear(), now.getMonthValue());
+        // 顶部三个数字跟着「选中的月份」走：默认本月，点了跨月趋势的柱子就是那个月。
+        // 只换图表不换数字的话，标题写「本月」而数字是别的月，容易看错。
+        LocalDate month = pieMonth == null ? now : pieMonth;
+        double[] s = txRepo.monthSummary(month.getYear(), month.getMonthValue());
         ((TextView) v.findViewById(R.id.money_income)).setText(String.format("¥%.2f", s[0]));
         ((TextView) v.findViewById(R.id.money_expense)).setText(String.format("¥%.2f", s[1]));
         ((TextView) v.findViewById(R.id.money_balance)).setText(String.format("¥%.2f", s[2]));
 
-        // 环比：本月 vs 上月
-        LocalDate prev = now.minusMonths(1);
+        // 标题也跟着换，避免标签写「本月」而数字是历史上某个月
+        boolean current = month.getYear() == now.getYear() && month.getMonthValue() == now.getMonthValue();
+        String prefix = current ? "本月" : month.getMonthValue() + "月";
+        ((TextView) v.findViewById(R.id.caption_income)).setText(prefix + "收入");
+        ((TextView) v.findViewById(R.id.caption_expense)).setText(prefix + "支出");
+        ((TextView) v.findViewById(R.id.caption_balance)).setText(prefix + "结余");
+
+        // 净资产：全期口径，含账户初始余额，和上面「结余」（只看本月）不是一回事。
+        // 口径见 analysis/AccountBalance.java。
+        TextView netWorthView = v.findViewById(R.id.money_net_worth);
+        if (netWorthView != null) {
+            double initialTotal = 0;
+            for (com.personal.accounting.android.model.Account a
+                    : new com.personal.accounting.android.data.AccountRepo(requireContext()).list()) {
+                initialTotal += a.initialBalance;
+            }
+            double income = 0, expense = 0;
+            for (double[] flow : txRepo.flowByAccount(now).values()) {
+                income += flow[0];
+                expense += flow[1];
+            }
+            netWorthView.setText("净资产 "
+                    + com.personal.accounting.android.analysis.AccountBalance.format(
+                    com.personal.accounting.android.analysis.AccountBalance.netWorth(
+                            initialTotal, income, expense)));
+        }
+
+        // 环比：选中月 vs 它的上一个月（选中历史月份时也跟着算那个月的环比）
+        LocalDate prev = month.minusMonths(1);
         double[] ps = txRepo.monthSummary(prev.getYear(), prev.getMonthValue());
         double mom = ps[1] > 0 ? (s[1] - ps[1]) / ps[1] * 100 : 0;
         TextView momView = v.findViewById(R.id.money_mom);
@@ -246,19 +285,17 @@ public class ReportFragment extends Fragment {
         if (title != null) title.setText(pieTitleText(month, byCat, now));
 
         List<PieEntry> entries = new ArrayList<>();
-        List<Integer> colors = new ArrayList<>();
-        // 调色板随深浅模式切换（values / values-night 各一套），大扇区固定落在靠前的浅色上
-        int[] palette = ChartColors.piePalette(requireContext());
-        int i = 0;
         for (Map.Entry<String, Double> e : byCat.entrySet()) {
             entries.add(new PieEntry(e.getValue().floatValue(), e.getKey()));
-            colors.add(palette[i++ % palette.length]);
         }
         if (entries.isEmpty()) {
             pie.clear();
             pie.invalidate();
             return;
         }
+        // 调色板随深浅模式切换（values / values-night 各一套），大扇区固定落在靠前的浅色上。
+        // 扇区数超过颜色数时由 pieColors 保证相邻扇区（含首尾）不撞色。
+        int[] colors = ChartColors.pieColors(requireContext(), entries.size());
         PieDataSet ds = new PieDataSet(entries, "支出构成");
         ds.setColors(colors);
         // 标签位置由 PieSliceLabelRenderer 按扇区分别决定：
@@ -462,7 +499,11 @@ public class ReportFragment extends Fragment {
         chart.highlightValue(null);
         renderMonthTrend(chart);
         View root = getView();
-        if (root != null) renderPie(root.findViewById(R.id.pie));
+        if (root != null) {
+            // 月份变了：顶部三个数字和环形图一起换，别只换图
+            renderSummary(root);
+            renderPie(root.findViewById(R.id.pie));
+        }
     }
 
     /** 切换统计范围：支出（全部）/ 收入（全部）/ 某个分类的支出。 */
@@ -494,6 +535,8 @@ public class ReportFragment extends Fragment {
                     if (root == null) return;
                     updateTrendScopeButton(root);
                     renderMonthTrend(root.findViewById(R.id.month_trend));
+                    // 口径换了、月份回到当月：顶部数字也要跟着回本月
+                    renderSummary(root);
                     renderPie(root.findViewById(R.id.pie));
                 })
                 .show();
@@ -590,8 +633,13 @@ public class ReportFragment extends Fragment {
      */
     private void animateGrowth(Chart chart) {
         if (chart == null) return;
+        final float from = 0.02f;
+        // 先把相位压回起点再 post：setData 之后、动画真正跑起来之前还会画一帧，
+        // 那一帧会沿用上一次动画留下的相位（1.0），环形图的标签就会先在终点位置闪一下。
+        chart.getAnimator().setPhaseY(from);
+        chart.invalidate();
         chart.post(() -> {
-            final ValueAnimator va = ValueAnimator.ofFloat(0.02f, 1f);
+            final ValueAnimator va = ValueAnimator.ofFloat(from, 1f);
             // 800ms。这个值比常见的入场动画（200~300ms）长不少，是刻意的：
             // 环形图扫开是覆盖整块画布的连续变化，时长太短会被看成「一下就位」而不是生长。
             // 实测 600ms 可辨、280ms 基本看不见，取 800 留出余量。

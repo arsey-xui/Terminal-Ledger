@@ -24,10 +24,23 @@ public class ApiClient {
             .writeTimeout(20, TimeUnit.SECONDS)
             .build();
 
+    /**
+     * 给访问自家后端的请求带上共享密钥。
+     *
+     * <p>只在 {@link #post} 和 {@link #get} 里用。{@link #getAbsolute} 打的是 GitHub 之类的外部地址，
+     * 绝不能把密钥带出去。密钥为空（后端没开校验）时干脆不加这个头。</p>
+     */
+    private static Request.Builder authed(Request.Builder builder) {
+        String token = SyncConfig.token();
+        if (!token.isEmpty()) {
+            builder.addHeader("X-Sync-Token", token);
+        }
+        return builder;
+    }
+
     public <T> T post(String path, Object body, Class<T> responseClass) throws IOException {
         String url = SyncConfig.BASE_URL + path;
-        Request request = new Request.Builder()
-                .url(url)
+        Request request = authed(new Request.Builder().url(url))
                 .post(RequestBody.create(gson.toJson(body), JSON))
                 .build();
         return execute(request, responseClass);
@@ -36,14 +49,13 @@ public class ApiClient {
     /** GET 请求（同样解包后端统一响应里的 data）。 */
     public <T> T get(String path, Class<T> responseClass) throws IOException {
         String url = SyncConfig.BASE_URL + path;
-        Request request = new Request.Builder()
-                .url(url)
+        Request request = authed(new Request.Builder().url(url))
                 .get()
                 .build();
         return execute(request, responseClass);
     }
 
-    /** 请求完整地址（例如 GitHub Releases API），不做 baseUrl 拼接、也不解包 data。 */
+    /** 请求完整地址（例如 GitHub Releases API），不做 baseUrl 拼接、不解包 data、也不带共享密钥。 */
     public <T> T getAbsolute(String url, Class<T> responseClass) throws IOException {
         Request request = new Request.Builder()
                 .url(url)

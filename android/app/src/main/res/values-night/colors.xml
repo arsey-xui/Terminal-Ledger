@@ -58,4 +58,15 @@
     <color name="chip_stroke">#3D3D3D</color>
     <!-- 选中态底色是酸橙绿，文字仍固定黑 -->
     <color name="chip_text_selected">#000000</color>
+
+    <!-- 图表分类色（深色基底）：与浅色同一组色相，整体提亮、降饱和，
+         否则低饱和色压到 #0A0A0A 上会糊成一片。顺序与浅色一致。 -->
+    <color name="pie_1">#C0FF00</color>
+    <color name="pie_2">#63B0BE</color>
+    <color name="pie_3">#DCA377</color>
+    <color name="pie_4">#87A6D6</color>
+    <color name="pie_5">#D08F87</color>
+    <color name="pie_6">#A99BC4</color>
+    <color name="pie_7">#8FB06A</color>
+    <color name="pie_8">#C0B39F</color>
 </resources>

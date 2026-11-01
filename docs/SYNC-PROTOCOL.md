@@ -8,7 +8,13 @@
 - `last_modified`：最后修改时间（Unix epoch 毫秒）。
 - `deleted`：软删除墓碑。
 
-客户端以 `device_id` + `last_sync`（水位）记录同步位置。
+客户端按 `device_id` 记**两个**水位（手机端是 `sync_state` 表，桌面端是 H2 里同名的表）：
+
+- `last_sync`：**pull** 水位，存服务端 `serverTime`（服务端时钟域）；
+- `push_watermark`：**push** 水位，存本机 `last_modified` 的最大值（客户端时钟域）。
+
+不能共用一个值：`last_modified` 由各客户端写，而 `since` 比的是服务端时间，
+混在一起会在时钟偏差时漏记录。
 
 ## 接口
 
@@ -34,23 +40,23 @@ if (existing.isEmpty()) {
 
 客户端本地合并用的是**同一规则**（见 `SyncManager` 的 `upsertLww`）。
 
-## 拉取（协议能力）与当前实现
+## 两端如何使用水位
 
-协议侧：
+接口没变（`pull` 收 `since`，返回 `serverTime` / `hasMore` / `nextCursor`），两端
+`SyncManager` 的实际行为是：
 
-- `pull` 返回 `last_modified > since` 的记录，按 `(last_modified, id)` 游标分页。
-- 首次同步默认只拉最近 **3 个月**（`accounting.sync.pull-window-months`），避免全量。
-- `pull-window`（`{deviceId, since, until, cursor?}`）用于向更早历史分段回补。
-
-**但两端客户端目前都还没用上这套增量机制**：`SyncManager` 里 `pull.since` 恒为 `0`，
-push 也送全量（`listModifiedSince(0)`，含删除墓碑）。因此实际行为是：
-
-- push 全量本地数据（数据量大时由服务端做 LWW 合并）；
-- pull 从水位 0 开始翻页，服务端因此只返回近 3 个月；
-- `last_sync` 水位与 `pull-window` **只有服务端接口，客户端未调用**，更早历史暂不回补。
-
-个人数据量下全量对账最不容易漏 —— 不依赖水位、也不依赖两端时钟是否一致；代价是流量随数据量线性增长。
-数据变大后再切到水位增量即可，协议与服务端都已就绪。
+- **push**：只取 `last_modified > pushSince` 的记录（含软删除墓碑）。取数起点是
+  `min(push_watermark, now - 1h)` —— 水位本身精确推进，但最近一小时的改动总会被重推，
+  设备时钟往回跳也不会漏推。
+- **pull**：`since = max(0, last_sync - 1h)`，然后用 `nextCursor` 循环到 `hasMore=false`。
+  往回多看一小时是为了容忍服务端 `last_modified` 与 `serverTime` 的时钟差；LWW 合并幂等，
+  多拉一点没有副作用。
+- **水位落盘时机**：只在整轮（push 成功 + 分页拉完）之后写；中途失败保持旧水位。
+  `last_sync` 取**第一页**的 `serverTime`（最早读到的值，最保守）。
+- **首次同步**（水位为 0）：流水只拉最近 **3 个月**（`accounting.sync.pull-window-months`），
+  字典类（分类 / 账户 / 模板 / 周期规则 / 预算）全量。
+- **`pull-window` 仍然没有客户端调用**：更早的历史不会自动回补，换设备后只有最近 3 个月的流水。
+  这是已知缺口，见 `docs/v1.4.0-plan.md` 第 6 点的说明。
 
 ## 时间字段的格式要求
 

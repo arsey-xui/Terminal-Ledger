@@ -25,7 +25,10 @@
 1. **离线优先**：UI 不依赖网络，写操作只落本地库。
 2. **客户端为主**：`clientId`、`lastModified`、`deleted` 都由客户端生成，服务端只做合并与存储。
 3. **LWW**：冲突由时间戳大小决出，无需用户介入。
-4. **增量**：以 `last_modified > 水位` 为增量条件，配合游标分页，控制流量与电量；首拉默认最近 3 个月。
+4. **增量**：两端各记两个水位 —— `last_sync`（服务端 `serverTime`，pull 用）与
+   `push_watermark`（本机 `last_modified` 最大值，push 用）。push 只推水位之后的记录，
+   pull 从 `last_sync - 1h` 起翻页（留一小时重叠容忍时钟差），游标分页控制流量；
+   首次同步流水只拉最近 3 个月，字典类全量。详见 [SYNC-PROTOCOL.md](SYNC-PROTOCOL.md)。
 5. **软删除**：避免删除在同步中被丢失。
 
 ## 模块划分

@@ -22,6 +22,7 @@ out/
 # ---------- Android ----------
 android/local.properties
 android/app/build/
+android/app/build-rel/
 android/app/release/
 *.apk
 *.aab
@@ -68,9 +69,6 @@ env/
 android/keystore.properties
 android/*.jks
 android/*.keystore
-
-# ---------- Uploaded media ----------
-backend/uploads/
 
 # ---------- Backend runtime ----------
 backend/.backend.pid

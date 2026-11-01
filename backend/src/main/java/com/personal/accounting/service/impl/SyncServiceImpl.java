@@ -99,12 +99,36 @@ public class SyncServiceImpl implements SyncService {
     public SyncPullResponse pull(SyncPullRequest request) {
         long since = request.getSince() == null ? 0L : request.getSince();
         boolean fullSync = since == 0L;
-        if (fullSync && props.getPullWindowMonths() != null && request.getCursor() == null) {
-            // 首次同步：只拉最近 N 个月，避免一次性拉全量；更早数据走 pullWindow。
-            since = now() - java.util.concurrent.TimeUnit.DAYS.toMillis(props.getPullWindowMonths() * 30L);
+        boolean firstPage = request.getCursor() == null || request.getCursor().isBlank();
+
+        // 字典类（分类 / 账户 / 模板 / 周期规则 / 预算）**不套时间窗**，永远按客户端水位拉：
+        // 首次同步时水位是 0，也就是全量。这些表条数少，而且几个月前创建之后再没改过的分类、
+        // 账户必须能被新设备拿到 —— 否则流水里的外键会悬空，列表显示成「未分类」。
+        long dictSince = since;
+
+        // 只有流水走窗口：首次同步只拉最近 N 个月，避免一次拉全量。
+        long txnSince = since;
+        if (fullSync && firstPage && props.getPullWindowMonths() != null) {
+            txnSince = now() - java.util.concurrent.TimeUnit.DAYS.toMillis(props.getPullWindowMonths() * 30L);
         }
-        long[] keyset = decodeCursor(request.getCursor(), since);
-        return listChanges(keyset[0], keyset[1], true);
+        return listChanges(startCursor(request.getCursor(), txnSince, dictSince));
+    }
+
+    /**
+     * 算出这一页每个实体的起拉位置：有游标就按游标（每个实体各自一对），没有就是第一页 ——
+     * 流水从窗口起点、字典类从客户端水位开始，id 段留 0 以包含所有记录。
+     */
+    private static SyncCursor startCursor(String raw, long txnSince, long dictSince) {
+        SyncCursor stored = decodeCursor(raw);
+        if (stored != null) return stored;
+        SyncCursor c = new SyncCursor();
+        c.transaction[0] = txnSince;
+        c.category[0] = dictSince;
+        c.account[0] = dictSince;
+        c.budget[0] = dictSince;
+        c.template[0] = dictSince;
+        c.recurringRule[0] = dictSince;
+        return c;
     }
 
     @Override
@@ -112,8 +136,10 @@ public class SyncServiceImpl implements SyncService {
     public SyncPullResponse pullWindow(SyncPullRequest request) {
         long from = request.getSince() == null ? 0L : request.getSince();
         long until = request.getUntil() == null ? now() : request.getUntil();
-        long[] keyset = decodeCursor(request.getCursor(), from);
-        return listWindow(keyset[0], until, request.getCursor() != null ? keyset[1] : 0L);
+        SyncCursor stored = decodeCursor(request.getCursor());
+        SyncCursor start = stored != null ? stored : new SyncCursor();
+        if (stored == null) start.transaction[0] = from;
+        return listWindow(start, until);
     }
 
     // ------------------------------------------------------------------
@@ -230,14 +256,21 @@ public class SyncServiceImpl implements SyncService {
     //  游标分页
     // ------------------------------------------------------------------
 
-    private SyncPullResponse listChanges(long since, long sinceId, boolean ordered) {
+    /**
+     * 一页变更。每个实体按**自己的**游标段查询，互不影响。
+     *
+     * @param cursor 这一页每个实体的起拉位置（见 {@link SyncCursor}）
+     */
+    private SyncPullResponse listChanges(SyncCursor cursor) {
         int pageSize = props.getPullPageSize();
-        List<Transaction> txns = transactionRepository.keyset(since, sinceId, PageRequest.of(0, pageSize));
-        List<Category> cats = categoryRepository.keyset(since, sinceId, PageRequest.of(0, pageSize));
-        List<Account> accts = accountRepository.keyset(since, sinceId, PageRequest.of(0, pageSize));
-        List<Budget> budgets = budgetRepository.keyset(since, sinceId, PageRequest.of(0, pageSize));
-        List<Template> tmpls = templateRepository.keyset(since, sinceId, PageRequest.of(0, pageSize));
-        List<RecurringRule> rules = recurringRuleRepository.keyset(since, sinceId, PageRequest.of(0, pageSize));
+        PageRequest page = PageRequest.of(0, pageSize);
+        List<Transaction> txns = transactionRepository.keyset(cursor.transaction[0], cursor.transaction[1], page);
+        List<Category> cats = categoryRepository.keyset(cursor.category[0], cursor.category[1], page);
+        List<Account> accts = accountRepository.keyset(cursor.account[0], cursor.account[1], page);
+        List<Budget> budgets = budgetRepository.keyset(cursor.budget[0], cursor.budget[1], page);
+        List<Template> tmpls = templateRepository.keyset(cursor.template[0], cursor.template[1], page);
+        List<RecurringRule> rules = recurringRuleRepository.keyset(
+                cursor.recurringRule[0], cursor.recurringRule[1], page);
 
         SyncPullResponse resp = new SyncPullResponse();
         resp.setServerTime(now());
@@ -252,56 +285,137 @@ public class SyncServiceImpl implements SyncService {
                 || budgets.size() == pageSize || tmpls.size() == pageSize || rules.size() == pageSize;
         resp.setHasMore(hasMore);
         if (hasMore) {
-            long maxTs = maxLastModified(txns, cats, accts, budgets, tmpls, rules, since);
-            long maxId = txns.isEmpty() ? sinceId : txns.get(txns.size() - 1).getId();
-            resp.setNextCursor(encodeCursor(maxTs, maxId));
+            // 每个实体各自推进自己的游标：满页的接在最后一条之后，没满页的标记成「已取完」
+            SyncCursor next = new SyncCursor();
+            advance(next.transaction, txns, pageSize);
+            advance(next.category, cats, pageSize);
+            advance(next.account, accts, pageSize);
+            advance(next.budget, budgets, pageSize);
+            advance(next.template, tmpls, pageSize);
+            advance(next.recurringRule, rules, pageSize);
+            resp.setNextCursor(encodeCursor(next));
         }
         return resp;
     }
 
-    private SyncPullResponse listWindow(long from, long until, long fromId) {
+    private SyncPullResponse listWindow(SyncCursor start, long until) {
         // 简化窗口实现：按 lastModified 分页，上界用 until 过滤。完整实现可复用 keyset。
         int pageSize = props.getPullPageSize();
         SyncPullResponse resp = new SyncPullResponse();
         resp.setServerTime(now());
-        // 通过 findAll 后内存过滤不优雅，这里给出可按需扩展的占位：返回 from..until 内的变更。
-        // 实际生产建议在 SQL 中直接加 last_modified BETWEEN :from AND :until AND id > :id。
-        List<Transaction> txns = transactionRepository.keyset(from, fromId, PageRequest.of(0, pageSize));
+        List<Transaction> txns = transactionRepository.keyset(start.transaction[0], start.transaction[1],
+                PageRequest.of(0, pageSize));
         txns.stream().filter(t -> t.getLastModified() <= until)
                 .forEach(t -> resp.getTransactions().add(TransactionDto.from(t)));
-        resp.setHasMore(txns.size() == pageSize);
-        if (!txns.isEmpty()) {
-            resp.setNextCursor(encodeCursor(txns.get(txns.size() - 1).getLastModified(), txns.get(txns.size() - 1).getId()));
+        boolean hasMore = txns.size() == pageSize;
+        resp.setHasMore(hasMore);
+        if (hasMore) {
+            // 只回补流水。其余五段钉成「已取完」，免得客户端拿这个游标回头调 pull 时把字典类从头再拉一遍。
+            SyncCursor next = new SyncCursor();
+            advance(next.transaction, txns, pageSize);
+            pinExhausted(next.category, next.account, next.budget, next.template, next.recurringRule);
+            resp.setNextCursor(encodeCursor(next));
         }
         // 其它实体同理，占位保留。
         return resp;
     }
 
-    private long maxLastModified(List<Transaction> txns, List<Category> cats, List<Account> accts,
-                                 List<Budget> budgets, List<Template> tmpls,
-                                 List<RecurringRule> rules, long fallback) {
-        long max = fallback;
-        for (Transaction t : txns) if (t.getLastModified() > max) max = t.getLastModified();
-        for (Category c : cats) if (c.getLastModified() > max) max = c.getLastModified();
-        for (Account a : accts) if (a.getLastModified() > max) max = a.getLastModified();
-        for (Budget b : budgets) if (b.getLastModified() > max) max = b.getLastModified();
-        for (Template t : tmpls) if (t.getLastModified() > max) max = t.getLastModified();
-        for (RecurringRule r : rules) if (r.getLastModified() > max) max = r.getLastModified();
-        return max;
+    /**
+     * 一页的续拉位置：**每个实体各自一对 (lastModified, id)**。
+     *
+     * <p>为什么不能六张表共用一个 (ts, id)：{@code id} 是各表自己的自增序列，拿流水的 id 去筛分类，
+     * 在「本页只有分类、流水没满页」时会把游标卡在原地（无限返回同一页），
+     * id 大小对不上时还会跳过记录。keyset 查询的判定本身是
+     * {@code last_modified > :ts or (last_modified = :ts and id > :id)}，天然就是每表一对。</p>
+     */
+    private static final class SyncCursor {
+        final long[] transaction = {0L, 0L};
+        final long[] category = {0L, 0L};
+        final long[] account = {0L, 0L};
+        final long[] budget = {0L, 0L};
+        final long[] template = {0L, 0L};
+        final long[] recurringRule = {0L, 0L};
+
+        /** 编码顺序固定：流水、分类、账户、预算、模板、周期规则。 */
+        long[][] segments() {
+            return new long[][]{transaction, category, account, budget, template, recurringRule};
+        }
     }
 
-    private static String encodeCursor(long ts, long id) {
-        return Base64.getUrlEncoder().encodeToString((ts + ":" + id).getBytes(StandardCharsets.UTF_8));
+    /**
+     * 推进某个实体的游标：满页就接在最后一条之后；没满页说明这个实体已经取完，
+     * 钉成 (MAX, MAX) 让后面的页不再重复扫它。
+     */
+    private static void advance(long[] segment, List<? extends BaseEntity> rows, int pageSize) {
+        if (rows.size() < pageSize) {
+            pinExhausted(segment);
+            return;
+        }
+        BaseEntity last = rows.get(rows.size() - 1);
+        segment[0] = last.getLastModified();
+        segment[1] = last.getId();
     }
 
-    private static long[] decodeCursor(String cursor, long defaultTs) {
-        if (cursor == null || cursor.isBlank()) return new long[]{defaultTs, 0L};
+    /** 把游标段标记为「这个实体已经取完」。 */
+    private static void pinExhausted(long[]... segments) {
+        for (long[] segment : segments) {
+            segment[0] = Long.MAX_VALUE;
+            segment[1] = Long.MAX_VALUE;
+        }
+    }
+
+    private static String encodeCursor(SyncCursor cursor) {
+        StringBuilder sb = new StringBuilder();
+        for (long[] segment : cursor.segments()) {
+            if (sb.length() > 0) sb.append(',');
+            sb.append(segment[0]).append(':').append(segment[1]);
+        }
+        return Base64.getUrlEncoder().encodeToString(sb.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * 解游标；空或格式不对返回 null（调用方按第一页处理，坏游标不会让客户端卡在循环里）。
+     *
+     * <p>兼容旧格式：旧版游标只有一段 {@code ts:id}、六张表共用。它只会出现在「一次 pull 循环
+     * 中途碰上服务端升级」这种情形，按旧语义铺到六段上即可，不值得为它中断同步。</p>
+     */
+    private static SyncCursor decodeCursor(String raw) {
+        if (raw == null || raw.isBlank()) return null;
         try {
-            String raw = new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
-            String[] parts = raw.split(":");
-            return new long[]{Long.parseLong(parts[0]), Long.parseLong(parts[1])};
+            String text = new String(Base64.getUrlDecoder().decode(raw), StandardCharsets.UTF_8);
+            String[] parts = text.split(",");
+            SyncCursor cursor = new SyncCursor();
+            long[][] segments = cursor.segments();
+            if (parts.length == 1) {
+                long[] pair = parsePair(parts[0]);
+                if (pair == null) return null;
+                for (long[] segment : segments) {
+                    segment[0] = pair[0];
+                    segment[1] = pair[1];
+                }
+                return cursor;
+            }
+            if (parts.length != segments.length) return null;
+            for (int i = 0; i < segments.length; i++) {
+                long[] pair = parsePair(parts[i]);
+                if (pair == null) return null;
+                segments[i][0] = pair[0];
+                segments[i][1] = pair[1];
+            }
+            return cursor;
         } catch (Exception e) {
-            return new long[]{defaultTs, 0L};
+            return null;
+        }
+    }
+
+    /** 解析一段 {@code ts:id}；格式不对返回 null。 */
+    private static long[] parsePair(String text) {
+        int sep = text.indexOf(':');
+        if (sep <= 0 || sep == text.length() - 1) return null;
+        try {
+            return new long[]{Long.parseLong(text.substring(0, sep)), Long.parseLong(text.substring(sep + 1))};
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 
@@ -344,7 +458,6 @@ public class SyncServiceImpl implements SyncService {
         t.setCategoryClientId(dto.getCategoryClientId());
         t.setAccountClientId(dto.getAccountClientId());
         t.setNote(dto.getNote());
-        t.setPhotoPath(dto.getPhotoPath());
         t.setSource(dto.getSource());
         t.setCreatedAt(t.getCreatedAt() == null ? LocalDateTime.now() : t.getCreatedAt());
         t.setUpdatedAt(LocalDateTime.now());

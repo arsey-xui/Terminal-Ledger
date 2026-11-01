@@ -4,6 +4,7 @@ import android.content.Context;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -32,8 +33,15 @@ public final class AiSettingsDialog {
                 ? "当前：大模型分析（已配置 API Key）"
                 : "当前：本地规则引擎（未配置 API Key）";
 
+        // 已存的 Key 预填回输入框。以前这里是空的：用户只想改模型或地址，点一次「保存」
+        // 就会把 Key 覆盖成空值、顺带把大模型关掉（save() 见到空 Key 就退回规则引擎）。
+        // 电脑端同一个弹窗本来就预填，两端行为对齐。
+        // 先读 Key 再读 keyLost()：apiKey() 发现解不开时会顺手把标记立起来。
+        String savedKey = AiAnalysis.apiKey(context);
+
         EditText key = new EditText(context);
         key.setHint("API Key（如 sk-...）");
+        key.setText(savedKey);
         EditText base = new EditText(context);
         base.setHint("接口地址（默认 api.openai.com）");
         base.setText(AiAnalysis.baseUrl(context));
@@ -47,34 +55,55 @@ public final class AiSettingsDialog {
         updatePromptButton(promptButton, context);
         promptButton.setOnClickListener(v -> showPromptEditor(context, () -> updatePromptButton(promptButton, context)));
 
+        StringBuilder message = new StringBuilder(current).append("\n\n");
+        if (AiAnalysis.keyLost(context)) {
+            message.append("上次保存的 API Key 在这台设备上已经解不开（换机迁移或系统重置之后会这样），"
+                    + "已自动清除，需要重新填写一次。\n\n");
+        }
+        message.append("输入框里已填好当前保存的 Key，改模型或地址时不用重填。\n\n")
+                .append("想退回本地规则引擎：清空输入框再点「保存」，或直接点「改用规则引擎」——"
+                        + "后者只是不再调用大模型，已保存的 Key 会留着，下次想启用不用重填；"
+                        + "只有清空输入框再「保存」才会真的把 Key 删掉。\n\n")
+                .append("Key 加密后只存在本机，不随备份和同步走：卸载重装或换机之后需要重填。\n\n")
+                .append("「截图记账」的 AI 识别用的是同一个 Key，所以模型需要**支持图像输入**"
+                        + "（如 gpt-4o-mini）；模型不支持图像时，截图会自动退回本机离线识别。");
+
+        // 说明文字和表单放进同一个可滚动容器：原来说明走 setMessage，表单被挤到屏幕外，
+        // 而它自己不会滚，小屏上模型/地址输入框根本够不到
         LinearLayout box = new LinearLayout(context);
         box.setOrientation(LinearLayout.VERTICAL);
         int pad = (int) (24 * context.getResources().getDisplayMetrics().density);
         box.setPadding(pad, 0, pad, 0);
+        TextView intro = new TextView(context);
+        intro.setText(message.toString());
+        intro.setTextSize(14);
+        intro.setPadding(0, 0, 0, pad / 2);
+        box.addView(intro);
         box.addView(key);
         box.addView(base);
         box.addView(model);
         box.addView(promptButton);
 
+        ScrollView scroll = new ScrollView(context);
+        scroll.addView(box);
+
         new AlertDialog.Builder(context)
                 .setTitle("AI 设置")
-                .setMessage(current + "\n\n"
-                        + "填入 API Key 后点「保存」改用大模型；想切回本地规则引擎可直接点「改用规则引擎」。\n\n"
-                        + "「截图记账」的 AI 识别用的是同一个 Key，所以模型需要**支持图像输入**"
-                        + "（如 gpt-4o-mini）；模型不支持图像时，截图会自动退回本机离线识别。")
-                .setView(box)
+                .setView(scroll)
                 .setPositiveButton("保存", (d, w) -> {
                     AiAnalysis.save(context, key.getText().toString(),
                             base.getText().toString(), model.getText().toString(),
                             AiAnalysis.prompt(context));
                     Toast.makeText(context,
-                            AiAnalysis.useLlm(context) ? "已切换为大模型" : "未填 Key，继续用本地规则引擎",
+                            AiAnalysis.useLlm(context) ? "已保存，使用大模型分析" : "未填 Key，继续用本地规则引擎",
                             Toast.LENGTH_SHORT).show();
                     if (onSaved != null) onSaved.run();
                 })
-                // 一步切回规则引擎：清掉已保存的 Key，不再需要手动清空输入框
+                // 一步切回规则引擎。**不删 Key**：这个按钮说的是「不再用大模型」，
+                // 不是「把凭据忘掉」；电脑端同一个按钮也是保留 Key 的。
+                // 真想清掉就清空输入框再点「保存」。
                 .setNeutralButton("改用规则引擎", (d, w) -> {
-                    AiAnalysis.clearLlm(context);
+                    AiAnalysis.useRulesOnly(context);
                     Toast.makeText(context, "已改回本地规则引擎", Toast.LENGTH_SHORT).show();
                     if (onSaved != null) onSaved.run();
                 })
@@ -110,9 +139,13 @@ public final class AiSettingsDialog {
         box.addView(hint);
         box.addView(input);
 
+        // 提示词是多行长文本，小屏上同样会撑出屏幕，一起放进可滚动容器
+        ScrollView scroll = new ScrollView(context);
+        scroll.addView(box);
+
         new AlertDialog.Builder(context)
                 .setTitle("分析提示词")
-                .setView(box)
+                .setView(scroll)
                 .setPositiveButton("保存", (d, w) -> {
                     AiAnalysis.savePrompt(context, input.getText().toString());
                     Toast.makeText(context,

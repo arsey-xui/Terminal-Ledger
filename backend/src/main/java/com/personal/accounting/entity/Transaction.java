@@ -44,10 +44,6 @@ public class Transaction extends BaseEntity {
     @Column(length = 512)
     private String note;
 
-    /** 账单照片：云端保存的是相对路径（uploads/xxx.jpg）或 Base64 标记。 */
-    @Column(name = "photo_path", length = 1024)
-    private String photoPath;
-
     /** 原始凭证（数字小键盘/语音等），便于排查。 */
     @Column(length = 32)
     private String source;

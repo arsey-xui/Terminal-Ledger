@@ -45,6 +45,7 @@
         <TextField fx:id="noteField" GridPane.rowIndex="4" GridPane.columnIndex="1"/>
 
         <Button text="保存" onAction="#onSave" GridPane.rowIndex="5" GridPane.columnIndex="1"/>
+        <Button text="模板" onAction="#onTemplate" GridPane.rowIndex="5" GridPane.columnIndex="2"/>
     </GridPane>
 
     <Separator/>

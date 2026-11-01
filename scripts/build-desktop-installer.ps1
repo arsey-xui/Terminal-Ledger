@@ -54,10 +54,23 @@ if (Test-Path $iconPngFile) {
     & "$PSScriptRoot\generate-desktop-icon.ps1" -IconPng $iconPngFile -OutIco $iconIcoFile
 }
 
+# 构建标识：写进 fat jar 清单，界面左下角显示（见 BuildInfo）。
+# 同一版本号下的多个包靠构建时间 + 提交号区分，所以这里取**本地时间**而不是 Maven 的 UTC 时间戳。
+$buildTime = Get-Date -Format "yyyy-MM-dd HH:mm"
+$gitCommit = ""
+try {
+    $commitOut = & git -C $root rev-parse --short HEAD 2>$null
+    if ($LASTEXITCODE -eq 0 -and $commitOut) { $gitCommit = $commitOut.Trim() }
+} catch {
+    $gitCommit = ""
+}
+Write-Host "build time: $buildTime   commit: $(if ($gitCommit) { $gitCommit } else { '(未知)' })"
+
 Push-Location $desktop
 try {
     $mvnExe = (Get-Command mvn).Source
-    $code = Invoke-NativeSafe -FilePath $mvnExe -ArgumentList @("-q", "-DskipTests", "package")
+    $code = Invoke-NativeSafe -FilePath $mvnExe -ArgumentList @(
+        "-q", "-DskipTests", "-Dbuild.time=$buildTime", "-Dgit.commit=$gitCommit", "package")
     if ($code -ne 0) {
         throw "mvn package 失败（退出码 $code）。请查看上面的构建日志。"
     }

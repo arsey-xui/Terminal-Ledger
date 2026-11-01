@@ -107,7 +107,6 @@ public class TransactionController {
         t.setCategoryClientId(dto.getCategoryClientId());
         t.setAccountClientId(dto.getAccountClientId());
         t.setNote(dto.getNote());
-        t.setPhotoPath(dto.getPhotoPath());
         t.setSource(dto.getSource());
         t.setLastModified(dto.getLastModified() != null ? dto.getLastModified() : System.currentTimeMillis());
         t.setDeleted(false);

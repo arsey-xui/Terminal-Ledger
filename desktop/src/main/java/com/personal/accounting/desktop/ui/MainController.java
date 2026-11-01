@@ -9,6 +9,7 @@ import com.personal.accounting.desktop.model.RecurringRule;
 import com.personal.accounting.desktop.service.BackupService;
 import com.personal.accounting.desktop.service.AiReportGenerator;
 import com.personal.accounting.desktop.service.Recurrence;
+import com.personal.accounting.desktop.service.BuildInfo;
 import com.personal.accounting.desktop.service.UpdateCheck;
 import com.personal.accounting.desktop.service.UpdateConfig;
 import com.personal.accounting.desktop.sync.SyncConfig;
@@ -37,7 +38,14 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
-/** 主控制器：左侧导航切换中心内容。 */
+/**
+ * 主控制器：左侧导航切换中心内容。
+ *
+ * <p>当前页面名由顶栏的 {@code headerTitle} 统一显示，页面内容里不要再放一个同名标题：
+ * 账户管理 / 预算管理 / 数据管理 / 周期记账 四页原先各自带一个与顶栏同名的 h1，
+ * 一屏里同一个名字出现两次，已去掉。仪表盘页本来就没有内容标题；记账页内容区是
+ * 「记账录入」，与顶栏的「记账入口」不同名，不属于重复，保留。</p>
+ */
 public class MainController {
 
     @FXML private StackPane content;
@@ -114,8 +122,10 @@ public class MainController {
         headerStatus.setText("● 离线优先 · 本地模式");
         // 左下角版本号：运行时读打包元数据（jpackage --app-version / 清单里的 Implementation-Version），
         // 不再在 FXML 里写死，避免出现「包是 1.1.1、界面显示 v0.1.0」。
+        // 同时带上构建时间与提交号：同一版本号下的多个包靠这两个区分。
         if (appVersion != null) {
-            appVersion.setText("v" + UpdateCheck.currentVersion());
+            appVersion.setText(BuildInfo.summary());
+            appVersion.setWrapText(true);
         }
         refreshRecurringBadge();
         installPageTransition();
@@ -186,7 +196,6 @@ public class MainController {
     private Node buildRecurring() {
         VBox root = new VBox(12);
         root.getStyleClass().add("area");
-        root.getChildren().add(label0("周期记账", "h1"));
 
         Label explain = new Label("适合自动续费、房租、月供这类固定收支：先建规则，到期后会生成「待确认」项，"
                 + "你确认（可改金额）后才真正写入流水。支持每 N 天 / 周 / 月，例如「每 30 天」的包月续费。");
@@ -293,6 +302,7 @@ public class MainController {
                             ButtonType.OK, ButtonType.CANCEL);
                     confirm.showAndWait().filter(b -> b == ButtonType.OK).ifPresent(b -> {
                         db.deleteRecurringRule(r.clientId);
+                        syncInBackground();
                         holder[0].run();
                         holder[1].run();
                         info("已删除规则：" + r.name);
@@ -467,7 +477,6 @@ public class MainController {
     private Node buildAccount() {
         VBox root = new VBox(12);
         root.getStyleClass().add("area");
-        root.getChildren().add(label0("账户管理", "h1"));
 
         ListView<Account> list = new ListView<>();
         list.setCellFactory(lv -> new ListCell<>() {
@@ -494,6 +503,7 @@ public class MainController {
             a.type = type.getText();
             a.lastModified = System.currentTimeMillis();
             db.upsertAccount(a);
+            syncInBackground();
             refresh.run();
             name.clear();
             type.clear();
@@ -506,6 +516,7 @@ public class MainController {
                 return;
             }
             db.deleteAccount(selected.clientId);
+            syncInBackground();
             refresh.run();
             info("已删除账户：" + selected.name);
         });
@@ -522,7 +533,6 @@ public class MainController {
     private Node buildBudget() {
         VBox root = new VBox(12);
         root.getStyleClass().add("area");
-        root.getChildren().add(label0("预算管理", "h1"));
 
         // 已设置的预算列表：保存/重置后立刻能看到结果（否则无法判断有没有生效）
         ListView<String> budgetList = new ListView<>();
@@ -571,6 +581,7 @@ public class MainController {
             b.deleted = false;
             b.lastModified = System.currentTimeMillis();
             db.upsertBudget(b);
+            syncInBackground();
             refreshList.run();
             amount.clear();
             Alert a = new Alert(Alert.AlertType.INFORMATION, "预算已保存");
@@ -588,7 +599,6 @@ public class MainController {
     private Node buildData() {
         VBox root = new VBox(12);
         root.getStyleClass().add("area");
-        root.getChildren().add(label0("数据管理", "h1"));
 
         // 设置后端地址（空默认 + 必填 + 自动补 http:// + 保存）
         TextField urlField = new TextField(SyncConfig.BASE_URL);
@@ -609,7 +619,22 @@ public class MainController {
                 info("保存失败: " + ex.getMessage());
             }
         });
-        HBox urlRow = new HBox(10, urlField, saveUrl);
+        // 共享密钥：与后端 accounting.sync.shared-secret 一致；留空表示后端没开校验
+        javafx.scene.control.PasswordField tokenField = new javafx.scene.control.PasswordField();
+        tokenField.setText(SyncConfig.token());
+        tokenField.setPromptText("共享密钥（后端没开校验就留空）");
+        tokenField.setPrefWidth(240);
+        Button saveToken = new Button("保存密钥");
+        saveToken.setOnAction(e -> {
+            String token = tokenField.getText() == null ? "" : tokenField.getText().trim();
+            try {
+                SyncConfig.saveToken(token);
+                info(token.isEmpty() ? "已清空共享密钥（同步将不带 X-Sync-Token）" : "已保存共享密钥");
+            } catch (Exception ex) {
+                info("保存失败: " + ex.getMessage());
+            }
+        });
+        HBox urlRow = new HBox(10, urlField, saveUrl, tokenField, saveToken);
         root.getChildren().add(urlRow);
 
         Button sync = new Button("立即同步");
@@ -827,13 +852,7 @@ public class MainController {
             info("重置失败：" + ex.getMessage());
             return;
         }
-        SYNC_EXECUTOR.submit(() -> {
-            try {
-                new SyncManager(db).sync();
-            } catch (Exception ignore) {
-                // 离线时静默失败，下次同步会补上
-            }
-        });
+        syncInBackground();
         info("已重置" + what + "为初次安装状态");
         refreshCurrentArea();
     }
@@ -841,6 +860,22 @@ public class MainController {
     /** 重置动作（DataManager 的方法会抛异常，用这个函数式接口包一下）。 */
     private interface ResetAction {
         void run() throws Exception;
+    }
+
+    /**
+     * 写完本地数据后随手同步一次：静默执行，失败不打扰用户（离线时下次同步会补上）。
+     *
+     * <p>删除/新增账户、保存预算、删除周期规则这些操作原先都不触发同步，改动只留在本机，
+     * 另一台设备下次拉取时看不到——而如果那边再编辑一次，被删的记录还会复活。</p>
+     */
+    private void syncInBackground() {
+        SYNC_EXECUTOR.submit(() -> {
+            try {
+                new SyncManager(db).sync();
+            } catch (Exception ignore) {
+                // 离线或未配置后端地址：静默失败，下次同步会补上
+            }
+        });
     }
 
     /** 重建当前显示的区域，让改动立刻可见。 */

@@ -56,6 +56,39 @@ final class ChartColors {
     }
 
     /**
+     * 给 count 个扇区分配颜色，保证**相邻扇区（含首尾）颜色不同**。
+     *
+     * <p>直接 {@code palette[i % length]} 有个坑：扇区数超过颜色数时，最后一块会拿回第一块的颜色，
+     * 而环是首尾相接的 —— 那两块正好并排贴在一起，完全分不出来。真实撞过的例子是 7 个分类时的
+     * 「医疗」（最小、最后一块）和「餐饮」（最大、第一块）都是同一个酸橙绿。</p>
+     *
+     * <p>颜色数不够时必然有重复，但只会落在不相邻的位置上。</p>
+     */
+    @ColorInt
+    static int[] pieColors(@NonNull Context context, int count) {
+        int[] palette = piePalette(context);
+        int[] colors = new int[count];
+        for (int i = 0; i < count; i++) {
+            int index = i % palette.length;
+            if (i > 0 && palette[index] == colors[i - 1]) {
+                index = (index + 1) % palette.length;
+            }
+            colors[i] = palette[index];
+        }
+        // 首尾相接：最后一块和第一块撞色时退到下一个候选色，别在 12 点方向并排出现两块同色
+        if (count > 1 && colors[count - 1] == colors[0]) {
+            for (int step = 1; step < palette.length; step++) {
+                int candidate = palette[(count - 1 + step) % palette.length];
+                if (candidate != colors[0] && candidate != colors[count - 2]) {
+                    colors[count - 1] = candidate;
+                    break;
+                }
+            }
+        }
+        return colors;
+    }
+
+    /**
      * 按背景明度给标签挑反色：在给定的两种候选色里选**对比度更高**的那个。
      *
      * <p>早先的实现是「亮度 &gt; 0.55 就用深色」，在中间调上会判错：中灰（如 #8C8C8C，亮度 0.42）

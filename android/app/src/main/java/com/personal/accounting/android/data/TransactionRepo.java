@@ -124,6 +124,34 @@ public class TransactionRepo {
     }
 
     /** 月度统计：返回该月支出/收入/结余。 */
+    /**
+     * 余额口径的聚合：{@code account_client_id -> {收入合计, 支出合计}}。
+     *
+     * <p>只统计「未删除 + 日期不晚于 today」的流水（ISO 日期字符串按字典序比较，等价于按时间比较）。
+     * {@code account_client_id} 为空的流水归到 key {@code ""} 下 —— 账户被删或记账时没选账户就是这种情况。</p>
+     */
+    public Map<String, double[]> flowByAccount(LocalDate today) {
+        String cutoff = (today == null ? LocalDate.now() : today).toString();
+        Map<String, double[]> map = new java.util.HashMap<>();
+        try (Cursor c = rw().rawQuery(
+                "SELECT COALESCE(account_client_id,''), type, COALESCE(SUM(amount),0)"
+                        + " FROM transaction_record WHERE deleted=0 AND date<=?"
+                        + " GROUP BY COALESCE(account_client_id,''), type",
+                new String[]{cutoff})) {
+            while (c.moveToNext()) {
+                String accountId = c.getString(0);
+                double[] pair = map.get(accountId);
+                if (pair == null) {
+                    pair = new double[]{0, 0};
+                    map.put(accountId, pair);
+                }
+                if ("INCOME".equals(c.getString(1))) pair[0] += c.getDouble(2);
+                else pair[1] += c.getDouble(2);
+            }
+        }
+        return map;
+    }
+
     public double[] monthSummary(int year, int month) {
         String dateFrom = LocalDate.of(year, month, 1).toString();
         String dateTo = LocalDate.of(year, month, 1).withDayOfMonth(
@@ -245,7 +273,6 @@ public class TransactionRepo {
         v.put("category_client_id", t.categoryClientId);
         v.put("account_client_id", t.accountClientId);
         v.put("note", t.note);
-        v.put("photo_path", t.photoPath);
         v.put("source", t.source);
         v.put("last_modified", t.lastModified);
         v.put("deleted", t.deleted ? 1 : 0);
@@ -263,7 +290,6 @@ public class TransactionRepo {
         t.categoryClientId = c.getString(c.getColumnIndexOrThrow("category_client_id"));
         t.accountClientId = c.getString(c.getColumnIndexOrThrow("account_client_id"));
         t.note = c.getString(c.getColumnIndexOrThrow("note"));
-        t.photoPath = c.getString(c.getColumnIndexOrThrow("photo_path"));
         t.source = c.getString(c.getColumnIndexOrThrow("source"));
         t.lastModified = c.getLong(c.getColumnIndexOrThrow("last_modified"));
         t.deleted = c.getInt(c.getColumnIndexOrThrow("deleted")) == 1;

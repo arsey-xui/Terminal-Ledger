@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.content.res.ColorStateList;
 import android.net.Uri;
 import android.app.Activity;
+import android.app.DatePickerDialog;
 import android.os.Bundle;
 import android.os.Build;
 import android.text.TextUtils;
@@ -36,7 +37,9 @@ import com.personal.accounting.android.bill.ScreenshotOcr;
 import com.personal.accounting.android.data.AccountRepo;
 import com.personal.accounting.android.data.BudgetRepo;
 import com.personal.accounting.android.data.CategoryRepo;
+import com.personal.accounting.android.data.TemplateRepo;
 import com.personal.accounting.android.data.TransactionRepo;
+import com.personal.accounting.android.model.Template;
 import com.personal.accounting.android.model.Account;
 import com.personal.accounting.android.model.Budget;
 import com.personal.accounting.android.model.Category;
@@ -48,6 +51,7 @@ import com.personal.accounting.android.voice.VoiceInputParser;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 /** 快速记账页：数字键盘 + 分类快捷图标 + 账户选择 + 语音入口。 */
@@ -67,6 +71,17 @@ public class RecordFragment extends Fragment implements VoiceEntryDialog.Host {
     private String selectedCategoryId;
     private String selectedAccountId;
     private boolean isIncome = false;
+
+    // ---- 编辑已保存的流水 ----
+    // 非 null 表示当前表单在编辑这一条：保存时沿用同一个 clientId（覆盖原记录），
+    // 而不是又新增一条。date / source 也保持原值，避免「编辑一次就变成今天的账」。
+    private String editingClientId;
+    private java.time.LocalDate editingDate;
+    /** 这次要记到哪一天。默认今天，补记前一天时由日期选择器改。 */
+    private java.time.LocalDate selectedDate;
+    private String editingSource;
+    private TextView saveButton;
+    private TemplateRepo templateRepo;
     private ScreenshotOcr screenshotOcr;
     private BillAiRecognizer billAiRecognizer;
 
@@ -116,7 +131,10 @@ public class RecordFragment extends Fragment implements VoiceEntryDialog.Host {
         accountRepo = new AccountRepo(requireContext());
         screenshotOcr = new ScreenshotOcr(requireContext());
 
-        dateView.setText("今天 · " + LocalDate.now());
+        selectedDate = LocalDate.now();
+        refreshDateLabel();
+        // 点日期那一行可以改：前一天忘了记，第二天补的时候要落到那一天
+        dateView.setOnClickListener(x -> pickDate());
         buildCategoryBar();
         refreshAccountButton();
 
@@ -128,13 +146,13 @@ public class RecordFragment extends Fragment implements VoiceEntryDialog.Host {
         });
         v.findViewById(R.id.btn_voice).setOnClickListener(this::startVoice);
         v.findViewById(R.id.btn_screenshot).setOnClickListener(x -> pickScreenshot());
-        v.findViewById(R.id.btn_save).setOnClickListener(x -> save());
+        saveButton = v.findViewById(R.id.btn_save);
+        saveButton.setOnClickListener(x -> save());
+        templateRepo = new TemplateRepo(requireContext());
+        v.findViewById(R.id.btn_template).setOnClickListener(x -> showTemplatePicker());
 
         // 本月概览
-        double[] s = txRepo.monthSummary(LocalDate.now().getYear(), LocalDate.now().getMonthValue());
-        ((TextView) v.findViewById(R.id.summary_income)).setText(String.format("¥%.2f", s[0]));
-        ((TextView) v.findViewById(R.id.summary_expense)).setText(String.format("¥%.2f", s[1]));
-        ((TextView) v.findViewById(R.id.summary_balance)).setText(String.format("¥%.2f", s[2]));
+        renderMonthSummary(v);
 
         refreshRecurringHint(v);
         refreshFirstUseCard(v);
@@ -157,6 +175,33 @@ public class RecordFragment extends Fragment implements VoiceEntryDialog.Host {
             refreshRecurringHint(v);
             refreshFirstUseCard(v);
         }
+    }
+
+    /**
+     * 页面在底部导航里被切走 / 切回时由系统调用。
+     *
+     * <p>页面切换改成 {@code add + hide/show} 之后，本页常驻不再重建，{@code onResume}
+     * 只跑一次。于是「切走 → 记一笔 → 切回来」这条路径上，本页自己也不刷新：
+     * 本月概览停在首次渲染的数字，首次使用引导卡也不会因为刚记完一笔而消失。
+     * 这两个以前靠重建页面自然校正，现在在重新可见时显式刷新一次。</p>
+     */
+    @Override
+    public void onHiddenChanged(boolean hidden) {
+        super.onHiddenChanged(hidden);
+        if (hidden) return;
+        View v = getView();
+        if (v == null) return;
+        renderMonthSummary(v);
+        refreshRecurringHint(v);
+        refreshFirstUseCard(v);
+    }
+
+    /** 本月概览：收入 / 支出 / 结余。抽出来是因为切换页面回到本页时也要重算。 */
+    private void renderMonthSummary(View v) {
+        double[] s = txRepo.monthSummary(LocalDate.now().getYear(), LocalDate.now().getMonthValue());
+        ((TextView) v.findViewById(R.id.summary_income)).setText(String.format("¥%.2f", s[0]));
+        ((TextView) v.findViewById(R.id.summary_expense)).setText(String.format("¥%.2f", s[1]));
+        ((TextView) v.findViewById(R.id.summary_balance)).setText(String.format("¥%.2f", s[2]));
     }
 
     /**
@@ -193,7 +238,17 @@ public class RecordFragment extends Fragment implements VoiceEntryDialog.Host {
     private void buildCategoryBar() {
         categoryBar.removeAllViews();
         List<Category> cats = isIncome ? catRepo.listIncome() : catRepo.listExpense();
-        selectedCategoryId = null; // 切换 支出/收入 后需重新选分类
+        // 只在「当前选中的分类不在这次要显示的列表里」时才清空：
+        // 切收入/支出时它自然不匹配，而套用模板时刚设好的分类不该被抹掉。
+        // 以前这里无条件清空，导致模板里存好的分类永远套不上，套完还得再选一次。
+        boolean selectionStillListed = false;
+        for (Category c : cats) {
+            if (c.clientId.equals(selectedCategoryId)) {
+                selectionStillListed = true;
+                break;
+            }
+        }
+        if (!selectionStillListed) selectedCategoryId = null;
         // 一个分类都没有时，栏里只剩「＋ 新增」，用户不知道这是怎么回事，先说明一句
         if (cats.isEmpty()) {
             TextView empty = new TextView(requireContext());
@@ -228,6 +283,8 @@ public class RecordFragment extends Fragment implements VoiceEntryDialog.Host {
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         lp.setMargins(4, 4, 4, 4);
         categoryBar.addView(add, lp);
+        // 选择被保留下来时（例如套用模板）把高亮补回来，用户一眼看到选的是哪个
+        if (selectedCategoryId != null) selectCategory(selectedCategoryId);
     }
 
     /**
@@ -330,6 +387,7 @@ public class RecordFragment extends Fragment implements VoiceEntryDialog.Host {
                     c.lastModified = System.currentTimeMillis();
                     c.deleted = false;
                     catRepo.upsertLww(c);
+                    SyncManager.requestAfterWrite();
                     buildCategoryBar();
                     selectedCategoryId = c.clientId;
                     Toast.makeText(requireContext(), "已新增分类：" + name, Toast.LENGTH_SHORT).show();
@@ -422,6 +480,7 @@ public class RecordFragment extends Fragment implements VoiceEntryDialog.Host {
                     a.lastModified = System.currentTimeMillis();
                     a.deleted = false;
                     accountRepo.upsertLww(a);
+                    SyncManager.requestAfterWrite();
                     selectedAccountId = a.clientId;
                     refreshAccountButton();
                     Toast.makeText(requireContext(), "已新增账户：" + name, Toast.LENGTH_SHORT).show();
@@ -729,26 +788,204 @@ public class RecordFragment extends Fragment implements VoiceEntryDialog.Host {
             return;
         }
 
+        boolean editing = editingClientId != null;
         Transaction t = new Transaction();
-        t.clientId = UUID.randomUUID().toString();
-        t.date = LocalDate.now();
+        // 编辑时沿用原 clientId：另一端拉到的是「同一条被改过」，不会多出一条
+        t.clientId = editing ? editingClientId : UUID.randomUUID().toString();
+        // 编辑时用这条流水原本的日期；新记时用日期那一行选中的那一天（默认今天）
+        t.date = editing && editingDate != null ? editingDate
+                : (selectedDate == null ? LocalDate.now() : selectedDate);
         t.amount = amount;
         t.type = isIncome ? "INCOME" : "EXPENSE";
         t.categoryClientId = selectedCategoryId;
         t.accountClientId = selectedAccountId;
         t.note = noteInput.getText().toString().trim();
-        t.source = "manual";
+        t.source = editing && editingSource != null ? editingSource : "manual";
         t.lastModified = System.currentTimeMillis();
         t.deleted = false;
+        // insert 走 CONFLICT_REPLACE：同一个 clientId 就是覆盖，新增与编辑共用这一条路径
         txRepo.insert(t);
 
         String alert = checkBudgetAlert(selectedCategoryId);
+        String done = editing ? "已保存修改" : "已记账";
         Toast.makeText(requireContext(),
-                alert == null ? "已记账" : "已记账，" + alert, Toast.LENGTH_LONG).show();
+                alert == null ? done : done + "，" + alert, Toast.LENGTH_LONG).show();
 
         amountInput.setText("");
         noteInput.setText("");
+        resetEditing();
         new SyncManager(requireContext()).sync(null);
+    }
+
+    /**
+     * 进入编辑：把这条流水填回表单。
+     *
+     * @param clientId 要编辑的流水的 clientId
+     */
+    public void loadForEdit(String clientId) {
+        if (clientId == null || txRepo == null) return;
+        Transaction t = txRepo.findByClientId(clientId);
+        if (t == null) {
+            Toast.makeText(requireContext(), "这条流水已经不在了", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        editingClientId = t.clientId;
+        editingDate = t.date;
+        editingSource = t.source;
+        isIncome = "INCOME".equals(t.type);
+        incomeSwitch.setChecked(isIncome);              // 触发监听，分类栏按收入/支出重建
+        amountInput.setText(String.format(Locale.CHINA, "%.2f", t.amount));
+        noteInput.setText(t.note == null ? "" : t.note);
+        selectedCategoryId = t.categoryClientId;
+        selectedAccountId = t.accountClientId;
+        buildCategoryBar();
+        refreshAccountButton();
+        selectedDate = t.date;
+        dateView.setText("编辑 " + (t.date == null ? "" : t.date.toString()));
+        if (saveButton != null) saveButton.setText("保存修改");
+        Toast.makeText(requireContext(), "编辑中：改完点「保存修改」", Toast.LENGTH_SHORT).show();
+    }
+
+    // ---------- 模板 ----------
+
+    /** 模板入口：列出已保存模板供套用；也能把当前内容存成模板。 */
+    private void showTemplatePicker() {
+        final List<Template> templates = templateRepo.list();
+        List<String> labels = new ArrayList<>();
+        labels.add("＋ 把当前内容存为模板");
+        for (Template t : templates) {
+            labels.add(t.name + "　" + String.format(Locale.CHINA, "%.2f", t.amount) + " 元");
+        }
+        new AlertDialog.Builder(requireContext())
+                .setTitle("模板")
+                .setItems(labels.toArray(new String[0]), (d, which) -> {
+                    if (which == 0) saveAsTemplate();
+                    else showTemplateActions(templates.get(which - 1));
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    private void showTemplateActions(Template t) {
+        new AlertDialog.Builder(requireContext())
+                .setTitle(t.name)
+                .setItems(new String[]{"套用到表单", "删除模板"}, (d, which) -> {
+                    if (which == 0) applyTemplate(t);
+                    else deleteTemplate(t);
+                })
+                .show();
+    }
+
+    /** 套用模板：金额 / 收支 / 分类 / 账户 / 备注一起填回表单。 */
+    private void applyTemplate(Template t) {
+        isIncome = "INCOME".equals(t.type);
+        incomeSwitch.setChecked(isIncome);                 // 触发监听，分类栏按收支重建
+        amountInput.setText(String.format(Locale.CHINA, "%.2f", t.amount));
+        noteInput.setText(t.note == null ? "" : t.note);
+        // 分类或账户可能在别的设备上被删了：只套用还存在的，别选到一个已删的 id
+        selectedCategoryId = catRepo.find(t.categoryClientId) == null ? null : t.categoryClientId;
+        selectedAccountId = accountRepo.find(t.accountClientId) == null ? null : t.accountClientId;
+        buildCategoryBar();
+        refreshAccountButton();
+        Toast.makeText(requireContext(), "已套用模板：" + t.name, Toast.LENGTH_SHORT).show();
+    }
+
+    /** 把当前表单存成模板。模板记的是「怎么记」，不含日期。 */
+    private void saveAsTemplate() {
+        final String amountText = amountInput.getText().toString().trim();
+        if (amountText.isEmpty()) {
+            Toast.makeText(requireContext(), "先填一个金额", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (selectedCategoryId == null) {
+            Toast.makeText(requireContext(), "先选一个分类", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        EditText input = new EditText(requireContext());
+        input.setHint("模板名，例如「房租」");
+        new AlertDialog.Builder(requireContext())
+                .setTitle("存为模板")
+                .setView(input)
+                .setPositiveButton("保存", (d, w) -> {
+                    String name = input.getText().toString().trim();
+                    if (name.isEmpty()) {
+                        Toast.makeText(requireContext(), "模板名不能为空", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    double amount;
+                    try {
+                        amount = Double.parseDouble(amountText);
+                    } catch (NumberFormatException e) {
+                        Toast.makeText(requireContext(), "金额格式不对", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    Template t = new Template();
+                    t.clientId = UUID.randomUUID().toString();
+                    t.name = name;
+                    t.amount = amount;
+                    t.type = isIncome ? "INCOME" : "EXPENSE";
+                    t.categoryClientId = selectedCategoryId;
+                    t.accountClientId = selectedAccountId;
+                    t.note = noteInput.getText().toString().trim();
+                    t.sortOrder = 0;
+                    t.lastModified = System.currentTimeMillis();
+                    t.deleted = false;
+                    templateRepo.upsertLww(t);
+                    SyncManager.requestAfterWrite();
+                    Toast.makeText(requireContext(), "已存为模板：" + name, Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    /** 删除模板：置墓碑再同步，另一端才会跟着删掉。 */
+    private void deleteTemplate(Template t) {
+        ConfirmDialog.show(requireContext(), "删除模板？",
+                "「" + t.name + "」删掉后会同步到另一端，两端都不再显示。", "删除",
+                () -> {
+                    t.deleted = true;
+                    t.lastModified = System.currentTimeMillis();
+                    templateRepo.upsertLww(t);
+                    SyncManager.requestAfterWrite();
+                    Toast.makeText(requireContext(), "已删除模板：" + t.name, Toast.LENGTH_SHORT).show();
+                });
+    }
+
+    /** 退出编辑态，表单回到「记一笔」。 */
+    private void resetEditing() {
+        editingClientId = null;
+        editingDate = null;
+        editingSource = null;
+        if (saveButton != null) saveButton.setText(getString(R.string.save));
+        selectedDate = LocalDate.now();
+        refreshDateLabel();
+    }
+
+    /**
+     * 选记账日期。前一天忘了记、第二天补的时候，要把这笔落到那一天，
+     * 否则日均和标准差会把它算到第二天。
+     */
+    private void pickDate() {
+        LocalDate base = selectedDate == null ? LocalDate.now() : selectedDate;
+        DatePickerDialog dialog = new DatePickerDialog(requireContext(),
+                (picker, year, month, day) -> {
+                    selectedDate = LocalDate.of(year, month + 1, day);
+                    refreshDateLabel();
+                },
+                base.getYear(), base.getMonthValue() - 1, base.getDayOfMonth());
+        // 记账记的是已经发生的事，不允许选到未来，避免手滑把日期点到明天
+        dialog.getDatePicker().setMaxDate(System.currentTimeMillis());
+        dialog.show();
+    }
+
+    /** 日期那一行：今天/昨天给个前缀，其他日期直接显示，末尾的 ▾ 提示可以点。 */
+    private void refreshDateLabel() {
+        if (dateView == null) return;
+        LocalDate day = selectedDate == null ? LocalDate.now() : selectedDate;
+        LocalDate today = LocalDate.now();
+        String prefix = day.equals(today) ? "今天 · "
+                : day.equals(today.minusDays(1)) ? "昨天 · " : "";
+        dateView.setText(prefix + day + " ▾");
     }
 
     /** 记账后预警：分类当月累计 >=100% 红色；>=90% 黄色。 */

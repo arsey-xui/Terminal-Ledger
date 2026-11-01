@@ -23,6 +23,7 @@ import com.personal.accounting.android.data.TransactionRepo;
 import com.personal.accounting.android.model.Account;
 import com.personal.accounting.android.model.Category;
 import com.personal.accounting.android.model.Transaction;
+import com.personal.accounting.android.sync.SyncManager;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -96,6 +97,22 @@ public class HistoryFragment extends Fragment {
     @Override
     public void onResume() {
         super.onResume();
+        reload();
+    }
+
+    /**
+     * 页面在底部导航里被切走 / 切回时由系统调用（hide/show 模式下的标准钩子）。
+     *
+     * <p>页面切换改成 {@code add + hide/show} 之后，切走的页面只是被 {@code hide()}，
+     * 不再销毁重建，{@code onResume} 在整个应用生命周期里只跑一次。所以「切回流水页」
+     * 这条路径上不会重跑 {@link #reload()}，列表停在第一次加载的内容上 ——
+     * 表现就是记完一笔再切过来看不到这条新记录，得退出应用重进（重进才会重建页面）。
+     * hide/show 模式下「重新变为可见」的信号是 {@code onHiddenChanged(false)}，在这里补一次刷新。</p>
+     */
+    @Override
+    public void onHiddenChanged(boolean hidden) {
+        super.onHiddenChanged(hidden);
+        if (hidden || getView() == null) return;
         reload();
     }
 
@@ -266,11 +283,35 @@ public class HistoryFragment extends Fragment {
                     ? ChartColors.of(requireContext(), R.color.expense)
                     : ChartColors.of(requireContext(), R.color.income));
 
-            holder.del.setOnClickListener(x -> {
-                txRepo.delete(t.clientId);
-                reload();
+            // 点一下这一行 = 进记账页编辑这一条（保存时沿用同一个 clientId）
+            row.setOnClickListener(x -> {
+                if (requireActivity() instanceof MainActivity) {
+                    ((MainActivity) requireActivity()).editTransaction(t.clientId);
+                }
             });
+            holder.del.setOnClickListener(x -> ConfirmDialog.show(
+                    requireContext(),
+                    "删除这笔流水？",
+                    deleteSummary(t),
+                    "删除",
+                    () -> {
+                        txRepo.delete(t.clientId);
+                        // 删除也要同步：墓碑只留本机的话，另一端下次拉取会把这条记录拿回来
+                        SyncManager.requestAfterWrite();
+                        reload();
+                    }));
             return row;
+        }
+
+        /** 删除确认里把这一条长什么样摆出来，避免手滑删错。 */
+        private String deleteSummary(Transaction t) {
+            String day = t.date == null ? "未记日期" : t.date.toString();
+            String kind = "INCOME".equals(t.type) ? "收入" : "支出";
+            String note = t.note == null || t.note.trim().isEmpty() ? "无备注" : t.note.trim();
+            return day + " · " + kind + " "
+                    + String.format(java.util.Locale.CHINA, "%.2f", t.amount) + " 元"
+                    + "\n" + note
+                    + "\n\n删除后会同步到另一端，两端都不再显示。";
         }
 
         static class ViewHolder {

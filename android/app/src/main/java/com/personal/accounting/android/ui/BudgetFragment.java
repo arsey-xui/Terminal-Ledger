@@ -22,6 +22,7 @@ import com.personal.accounting.android.data.CategoryRepo;
 import com.personal.accounting.android.data.TransactionRepo;
 import com.personal.accounting.android.model.Budget;
 import com.personal.accounting.android.model.Category;
+import com.personal.accounting.android.sync.SyncManager;
 
 import java.text.DecimalFormat;
 import java.time.LocalDate;
@@ -39,8 +40,8 @@ public class BudgetFragment extends Fragment {
     private CategoryRepo catRepo;
     private TransactionRepo txRepo;
     private BudgetRepo budgetRepo;
-    private final int year = LocalDate.now().getYear();
-    private final int month = LocalDate.now().getMonthValue();
+    private int year = LocalDate.now().getYear();
+    private int month = LocalDate.now().getMonthValue();
 
     @Nullable
     @Override
@@ -52,7 +53,7 @@ public class BudgetFragment extends Fragment {
         catRepo = new CategoryRepo(requireContext());
         txRepo = new TransactionRepo(requireContext());
         budgetRepo = new BudgetRepo(requireContext());
-        monthTitle.setText(year + "年" + month + "月 · 预算管理");
+        syncMonth();
         v.findViewById(R.id.btn_reset_budget).setOnClickListener(x -> confirmReset());
         return v;
     }
@@ -64,6 +65,7 @@ public class BudgetFragment extends Fragment {
                         + "此操作影响本地数据，并会在下次同步时同步到云端。")
                 .setPositiveButton("重置", (d, w) -> {
                     budgetRepo.resetToDefaults();
+                    SyncManager.requestAfterWrite();
                     rebuildRows();
                     Toast.makeText(requireContext(), "预算已清空", Toast.LENGTH_SHORT).show();
                 })
@@ -75,6 +77,32 @@ public class BudgetFragment extends Fragment {
     public void onResume() {
         super.onResume();
         rebuildRows();
+    }
+
+    /**
+     * 页面在底部导航里被切走 / 切回时由系统调用。
+     *
+     * <p>页面切换改成 {@code add + hide/show} 之后，本页常驻不再重建，{@code onResume}
+     * 只跑一次，切回来时不会重跑 {@link #rebuildRows()}：刚记的那笔支出不会反映到
+     * 已用额度与进度条上。这里在重新可见时补一次刷新。</p>
+     *
+     * <p>顺带重算年月：字段只在构造时取过一次，页面常驻意味着跨月之后仍停在旧月份，
+     * 重建页面（旧实现）时本来会自然校正。</p>
+     */
+    @Override
+    public void onHiddenChanged(boolean hidden) {
+        super.onHiddenChanged(hidden);
+        if (hidden || getView() == null) return;
+        syncMonth();
+        rebuildRows();
+    }
+
+    /** 把年月对齐到「现在」，同时更新标题。跨月不清空页面也能切到新月份。 */
+    private void syncMonth() {
+        LocalDate today = LocalDate.now();
+        year = today.getYear();
+        month = today.getMonthValue();
+        if (monthTitle != null) monthTitle.setText(year + "年" + month + "月 · 预算管理");
     }
 
     private void rebuildRows() {
@@ -136,6 +164,7 @@ public class BudgetFragment extends Fragment {
             b.lastModified = System.currentTimeMillis();
             b.deleted = false;
             budgetRepo.upsertLww(b);
+            SyncManager.requestAfterWrite();
             updateProgress(progress, used, amount);
             Toast.makeText(requireContext(), "已保存「" + cat.name + "」预算", Toast.LENGTH_SHORT).show();
         });

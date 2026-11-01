@@ -16,7 +16,6 @@ public class TransactionDto {
     private String categoryClientId;
     private String accountClientId;
     private String note;
-    private String photoPath;
     private String source;
     private Long lastModified;
     private Boolean deleted;
@@ -31,7 +30,6 @@ public class TransactionDto {
         d.categoryClientId = t.getCategoryClientId();
         d.accountClientId = t.getAccountClientId();
         d.note = t.getNote();
-        d.photoPath = t.getPhotoPath();
         d.source = t.getSource();
         d.lastModified = t.getLastModified();
         d.deleted = t.getDeleted();

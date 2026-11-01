@@ -1,20 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   饼图/环图调色板（浅色基底）。
-  六个扇区颜色按「占比从大到小」依次取用，所以靠前的颜色会出现在最大的扇区上：
-  大扇区放浅色（黑字金额可读），深色只在占比小、标签走外置引线的位置出现。
+
+  按「占比从大到小」依次取用，所以靠前的颜色落在最大的扇区上。
+  标签文字色不在这里定：ChartColors.contrastOn 会按每块的实际亮度现算，所以不必严格按明度排序；
+  排序真正要照顾的有两件事 —— 大扇区尽量浅，以及**同色系不要相邻**。
+
+  为什么要管相邻：环是首尾相接的，第 1 块和最后一块挨在一起。原先 6 个颜色按模取用，
+  7 个分类时最后一块（「医疗」，最小的）拿回了第一块的颜色（「餐饮」，最大的），
+  两块酸橙绿正好并排贴着，完全分不出来。
 -->
 <resources>
     <!--
-      顺序按「明度从高到低」：占比最大的扇区拿到最亮的颜色（配深字可读），
-      最暗的两个放到最后，只会出现在占比很小、标签走环外引线的扇区上。
+      用一组低饱和的「同伴色相」而不是界面里的语义色，品牌绿留给最大的一块。
+      相邻两块刻意错开色系（绿→青→陶→蓝→砖→紫→橄榄→灰褐），颜色数不够时
+      由 ChartColors.pieColors 保证相邻两块不同色。
+      具体色值在 values/colors.xml 的 pie_1..pie_8（深色模式在 values-night）。
     -->
     <array name="pie_palette">
-        <item>@color/primary</item>
-        <item>@color/chart_grid</item>
-        <item>@color/text_secondary</item>
-        <item>@color/expense</item>
-        <item>@color/chart_text</item>
-        <item>@color/primary_dark</item>
+        <item>@color/pie_1</item>
+        <item>@color/pie_2</item>
+        <item>@color/pie_3</item>
+        <item>@color/pie_4</item>
+        <item>@color/pie_5</item>
+        <item>@color/pie_6</item>
+        <item>@color/pie_7</item>
+        <item>@color/pie_8</item>
     </array>
 </resources>

@@ -118,6 +118,7 @@ public static String BASE_URL = "http://10.0.2.2:8080";   // 模拟器
 $env:DB_URL="jdbc:mysql://localhost:3306/accounting?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true"
 $env:DB_USERNAME="root"
 $env:DB_PASSWORD="你的MySQL密码"
+# SYNC_TOKEN_SECRET 是保留项：当前后端接口不校验令牌，这行可以不设
 $env:SYNC_TOKEN_SECRET="任意的长字符串，至少32位"
 ```
 

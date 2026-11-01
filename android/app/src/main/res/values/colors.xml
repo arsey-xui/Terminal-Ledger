@@ -57,4 +57,17 @@
     <color name="chip_stroke">#D9D9D9</color>
     <!-- 分类按钮选中态（酸橙绿底）上的文字：两个基底都固定黑 -->
     <color name="chip_text_selected">#000000</color>
+
+    <!-- 图表分类色（只给饼图/环图用，不参与界面配色）。
+         为什么不复用界面里的语义色：红色代表支出、绿色代表收入、灰色代表禁用/空值，
+         当分类色用会和金额含义打架，「教育」那种浅灰压在浅色卡片上还会直接消失。
+         这里换成一组低饱和的同伴色相：彼此可区分，又不抢品牌绿。相邻两块刻意不同色系。 -->
+    <color name="pie_1">#C0FF00</color>
+    <color name="pie_2">#3F7F8C</color>
+    <color name="pie_3">#C98B5A</color>
+    <color name="pie_4">#4F6E99</color>
+    <color name="pie_5">#B5726B</color>
+    <color name="pie_6">#8E7FA8</color>
+    <color name="pie_7">#6E8C4A</color>
+    <color name="pie_8">#96897A</color>
 </resources>

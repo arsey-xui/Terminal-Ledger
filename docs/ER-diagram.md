@@ -33,7 +33,6 @@ erDiagram
         string categoryClientId FK
         string accountClientId FK
         string note
-        string photoPath
         string source
         long lastModified
         boolean deleted

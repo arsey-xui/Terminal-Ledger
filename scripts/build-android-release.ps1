@@ -4,7 +4,8 @@
 #  用法（仓库根目录或 scripts 目录执行）：
 #    .\scripts\build-android-release.ps1
 #        正式包：只打 arm64-v8a（真机与 ARM64 模拟器均可）
-#        产物：outputs\apk\TerminalLedger-<version>-arm64-v8a.apk 与同名 zip
+#        产物：outputs\apk\TerminalLedger-<version>-b<versionCode>-arm64-v8a.apk 与同名 zip
+#        每次出包 versionCode 自增（设置页显示 versionCode + 构建时间 + 提交号，用于分辨构建）
 #    .\scripts\build-android-release.ps1 -Version 1.0.2-test
 #        自定义产物后缀，便于同时保留多份测试包（不改 build.gradle 里的版本号）
 #    .\scripts\build-android-release.ps1 -Clean
@@ -15,7 +16,9 @@
 param(
     [switch]$GenerateKeystore,
     [string]$Version,
-    [switch]$Clean
+    [switch]$Clean,
+    # 不动 versionCode，原样重打同一个版本（排查问题、重出包时用）
+    [switch]$NoBump
 )
 
 $ErrorActionPreference = "Stop"
@@ -45,6 +48,29 @@ function Invoke-NativeSafe {
 
 if ($GenerateKeystore -or -not (Test-Path (Join-Path $android "keystore.properties"))) {
     & "$PSScriptRoot\generate-release-keystore.ps1"
+}
+
+# 出包前自增 versionCode。
+#
+# 一个 versionName 会出很多次包（同一版本号下继续修 bug 是常态），只靠版本名分不出手机上装的是
+# 哪一次。设置页会显示 versionCode + 构建时间 + 提交号，所以这里保证每次出包 versionCode 都不同。
+# -NoBump 用于原样重打同一个版本。
+$buildGradleFile = Join-Path $android "app\build.gradle"
+if (-not (Test-Path $buildGradleFile)) { throw "未找到 $buildGradleFile" }
+$gradleText = [IO.File]::ReadAllText($buildGradleFile, [Text.Encoding]::UTF8)
+$codePattern = [regex]'versionCode\s+(\d+)'
+$codeMatch = $codePattern.Match($gradleText)
+if (-not $codeMatch.Success) { throw "app/build.gradle 里找不到 versionCode" }
+$versionCode = [int]$codeMatch.Groups[1].Value
+if ($NoBump) {
+    Write-Host "versionCode: $versionCode (未自增，-NoBump)"
+} else {
+    $previousCode = $versionCode
+    $versionCode = $versionCode + 1
+    $gradleText = $codePattern.Replace($gradleText, "versionCode $versionCode", 1)
+    # 不带 BOM 写回：Groovy 能读 BOM，但没必要给构建文件加一个
+    [IO.File]::WriteAllText($buildGradleFile, $gradleText, (New-Object Text.UTF8Encoding($false)))
+    Write-Host "versionCode: $previousCode -> $versionCode"
 }
 
 Push-Location $android
@@ -77,14 +103,15 @@ New-Item -ItemType Directory -Force -Path $apkOutDir | Out-Null
 $destFiles = @()
 foreach ($file in $sources) {
     $abi = $file.BaseName -replace "^app-", "" -replace "-release$", ""
-    $dest = Join-Path $apkOutDir "TerminalLedger-$Version-$abi.apk"
+    # 文件名带上 versionCode：同一版本号出多次包时，下载目录里不会互相覆盖
+    $dest = Join-Path $apkOutDir "TerminalLedger-$Version-b$versionCode-$abi.apk"
     Copy-Item $file.FullName -Destination $dest -Force
     $destFiles += $dest
     Write-Host ("APK produced: {0}  ({1:N0} bytes, {2:yyyy-MM-dd HH:mm:ss})" -f $dest, (Get-Item $dest).Length, (Get-Item $dest).LastWriteTime)
 }
 
 # 额外打包 zip，方便传到手机（部分渠道限制直接传 apk）
-$zipDest = Join-Path $apkOutDir "TerminalLedger-$Version.zip"
+$zipDest = Join-Path $apkOutDir "TerminalLedger-$Version-b$versionCode.zip"
 if (Test-Path $zipDest) { Remove-Item $zipDest -Force }
 Compress-Archive -Path $destFiles -DestinationPath $zipDest
 Write-Host "ZIP produced: $zipDest"

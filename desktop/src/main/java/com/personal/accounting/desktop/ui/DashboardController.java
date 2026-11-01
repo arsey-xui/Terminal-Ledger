@@ -38,6 +38,13 @@ import java.util.stream.Collectors;
 public class DashboardController {
 
     @FXML private Label labelIncome, labelExpense, labelBalance, labelMom;
+    /** 三张卡的标题：跟随选中月份在「本月收入」与「9月收入」之间切换。 */
+    @FXML private Label captionIncome, captionExpense, captionBalance;
+    /** 饼图标题：月份信息写在这里，而不是塞进图表的 title。 */
+    @FXML private Label pieTitle;
+    /** 饼图右侧的数值表：每个分类的金额与占比。 */
+    @FXML private VBox pieLegend;
+    @FXML private Label labelNetWorth;
     @FXML private Button btnSync;
     @FXML private PieChart pie;
     @FXML private LineChart<Number, Number> line;
@@ -59,6 +66,9 @@ public class DashboardController {
     private String monthTrendCategoryId;
     /** 下拉框里第 3 项起对应的分类，避免每次切换都重查。 */
     private List<Category> monthTrendCategories = new ArrayList<>();
+
+    /** 悬停提示只留一个：每次重绘复用并先隐藏，避免点一次就多一个标签留在屏幕上。 */
+    private Tooltip monthTrendTip;
 
     /**
      * 饼图当前展示的月份；null 表示本月。
@@ -119,23 +129,32 @@ public class DashboardController {
         LocalDate start = now.withDayOfMonth(1);
         LocalDate end = now.withDayOfMonth(now.lengthOfMonth());
         List<Transaction> cur = db.listTransactions(start, end, null, null);
-        LocalDate prev = now.minusMonths(1);
-        List<Transaction> prevTxns = db.listTransactions(
-                prev.withDayOfMonth(1), prev.withDayOfMonth(prev.lengthOfMonth()), null, null);
+        // 顶部三张卡跟着「当前选中的月份」走：默认本月，点过柱子就是那个月
+        renderSummaryCards(pieMonth == null ? now : pieMonth);
 
-        BigDecimal income = sum(cur, "INCOME");
-        BigDecimal expense = sum(cur, "EXPENSE");
-        labelIncome.setText(String.format("¥%.2f", income));
-        labelExpense.setText(String.format("¥%.2f", expense));
-        labelBalance.setText(String.format("¥%.2f", income.subtract(expense)));
+        // 净资产：全期口径，含账户初始余额，和上面「结余」（只看本月）不是一回事。
+        // 口径见 service/AccountBalance.java，与手机端逐字对应。
+        if (labelNetWorth != null) {
+            BigDecimal initialTotal = BigDecimal.ZERO;
+            for (com.personal.accounting.desktop.model.Account account : db.listAccounts()) {
+                if (account.initialBalance != null) initialTotal = initialTotal.add(account.initialBalance);
+            }
+            BigDecimal allIncome = BigDecimal.ZERO;
+            BigDecimal allExpense = BigDecimal.ZERO;
+            for (Transaction txn : db.listTransactions(LocalDate.of(1970, 1, 1), now, null, null)) {
+                if (txn.deleted
+                        || !com.personal.accounting.desktop.service.AccountBalance.counts(txn.date, now)) {
+                    continue;
+                }
+                BigDecimal amount = txn.amount == null ? BigDecimal.ZERO : txn.amount;
+                if ("INCOME".equals(txn.type)) allIncome = allIncome.add(amount);
+                else allExpense = allExpense.add(amount);
+            }
+            labelNetWorth.setText(com.personal.accounting.desktop.service.AccountBalance.format(
+                    com.personal.accounting.desktop.service.AccountBalance.netWorth(
+                            initialTotal, allIncome, allExpense)));
+        }
 
-        BigDecimal prevExpense = sum(prevTxns, "EXPENSE");
-        double mom = prevExpense.compareTo(BigDecimal.ZERO) > 0
-                ? expense.subtract(prevExpense).multiply(BigDecimal.valueOf(100))
-                .divide(prevExpense, 2, java.math.RoundingMode.HALF_UP).doubleValue()
-                : 0;
-        labelMom.setText(String.format("%+.1f%%", mom));
-        labelMom.setTextFill(mom >= 0 ? COLOR_EXPENSE : COLOR_INCOME);
 
         renderPie(now, cur);
         renderLine(now);
@@ -163,6 +182,41 @@ public class DashboardController {
      *
      * <p>标题同时说明画的是哪个月、共多少 —— 否则用户会以为它跟上面的卡片是同一个口径。</p>
      */
+    /**
+     * 顶部三张卡（收入 / 支出 / 结余 + 环比）：按传入的月份算。
+     *
+     * <p>点跨月趋势的柱子看历史月份时，卡片必须一起切到那个月 —— 否则上面写着「本月」、
+     * 下面的饼图却是 9 月，两个数字对不上。</p>
+     */
+    private void renderSummaryCards(LocalDate month) {
+        LocalDate start = month.withDayOfMonth(1);
+        LocalDate end = month.withDayOfMonth(month.lengthOfMonth());
+        List<Transaction> txns = db.listTransactions(start, end, null, null);
+        BigDecimal income = sum(txns, "INCOME");
+        BigDecimal expense = sum(txns, "EXPENSE");
+
+        LocalDate today = LocalDate.now().withDayOfMonth(1);
+        boolean current = start.getYear() == today.getYear() && start.getMonthValue() == today.getMonthValue();
+        String prefix = current ? "本月" : String.format("%d月", start.getMonthValue());
+        if (captionIncome != null) captionIncome.setText(prefix + "收入");
+        if (captionExpense != null) captionExpense.setText(prefix + "支出");
+        if (captionBalance != null) captionBalance.setText(current ? "结余" : prefix + "结余");
+
+        labelIncome.setText(String.format("¥%.2f", income));
+        labelExpense.setText(String.format("¥%.2f", expense));
+        labelBalance.setText(String.format("¥%.2f", income.subtract(expense)));
+
+        LocalDate prev = start.minusMonths(1);
+        BigDecimal prevExpense = sum(db.listTransactions(
+                prev, prev.withDayOfMonth(prev.lengthOfMonth()), null, null), "EXPENSE");
+        double mom = prevExpense.compareTo(BigDecimal.ZERO) > 0
+                ? expense.subtract(prevExpense).multiply(BigDecimal.valueOf(100))
+                .divide(prevExpense, 2, java.math.RoundingMode.HALF_UP).doubleValue()
+                : 0;
+        labelMom.setText(String.format("%+.1f%%", mom));
+        labelMom.setTextFill(mom >= 0 ? COLOR_EXPENSE : COLOR_INCOME);
+    }
+
     private void renderPie(LocalDate now, List<Transaction> currentMonthTxns) {
         LocalDate month = pieMonth == null ? now.withDayOfMonth(1) : pieMonth;
         boolean isCurrentMonth = month.getYear() == now.getYear() && month.getMonthValue() == now.getMonthValue();
@@ -180,13 +234,39 @@ public class DashboardController {
                 .toList();
         pie.getData().setAll(data);
 
-        if (isCurrentMonth) {
-            pie.setTitle("支出构成（本月）");
-            return;
+        // 右侧数值表：饼图只看得出占比，具体金额和百分比列在这里，按金额从大到小排
+        if (pieLegend != null) {
+            pieLegend.getChildren().clear();
+            // 让这一列按内容取宽：否则 HBox 会把它压得比文字还窄，金额又被省略号截掉
+            pieLegend.setMinWidth(javafx.scene.layout.Region.USE_PREF_SIZE);
+            BigDecimal all = totals.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+            totals.entrySet().stream()
+                    .sorted((a, b) -> b.getValue().compareTo(a.getValue()))
+                    .forEach(e -> {
+                        String pct = all.compareTo(BigDecimal.ZERO) > 0
+                                ? String.format("%.0f%%", e.getValue()
+                                .multiply(BigDecimal.valueOf(100))
+                                .divide(all, 1, java.math.RoundingMode.HALF_UP).doubleValue())
+                                : "0%";
+                        Label row = new Label(db.categoryName(e.getKey()) + "  ¥"
+                                + String.format("%.2f", e.getValue()) + "  " + pct);
+                        row.getStyleClass().add("card-label");
+                        pieLegend.getChildren().add(row);
+                    });
         }
-        BigDecimal total = totals.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
-        pie.setTitle(String.format("%d年%d月支出构成：%.2f 元（再点该柱回到本月）",
-                month.getYear(), month.getMonthValue(), total));
+
+        // 统一形态：只用环外标注、关掉图例、不给图表加 title。
+        // 之前历史月份塞了很长的 title，它会把图例挤出布局，于是「本月」有图例、历史月份没有，
+        // 看起来像两种不同的饼图。月份信息改由面板标题承载。
+        pie.setTitle(null);
+        pie.setLegendVisible(false);
+        if (isCurrentMonth) {
+            pieTitle.setText("支出构成（本月）");
+        } else {
+            BigDecimal total = totals.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+            pieTitle.setText(String.format("%d年%d月支出构成：%.2f 元（再点该柱回到本月）",
+                    month.getYear(), month.getMonthValue(), total));
+        }
     }
 
     private void renderLine(LocalDate now) {
@@ -312,7 +392,10 @@ public class DashboardController {
 
         // 悬停显示「月份 + 金额」。与折线图同一套做法：按鼠标最近的数据点节点定位，
         // 不依赖节点是否已经布局完成（没布局时 getNode() 为 null，跳过即可）。
-        final Tooltip tip = new Tooltip();
+        // 复用同一个 tooltip 并先隐藏：否则每次重绘都会多留一个标签挂在屏幕上
+        if (monthTrendTip == null) monthTrendTip = new Tooltip();
+        monthTrendTip.hide();
+        final Tooltip tip = monthTrendTip;
         monthTrend.setOnMouseMoved(e -> {
             XYChart.Data<String, Number> best = null;
             double bestDist = Double.MAX_VALUE;
@@ -353,6 +436,7 @@ public class DashboardController {
             // 柱子/口径换了，之前选中的月份不再对应当前视图：饼图回到本月
             pieMonth = null;
             LocalDate today = LocalDate.now();
+            renderSummaryCards(today);
             renderMonthTrend(today);
             renderPie(today, db.listTransactions(today.withDayOfMonth(1),
                     today.withDayOfMonth(today.lengthOfMonth()), null, null));
@@ -390,6 +474,8 @@ public class DashboardController {
 
         LocalDate now = LocalDate.now();
         renderMonthTrend(now);
+        // 点柱子切月份后，顶部三张卡也要跟着换
+        renderSummaryCards(pieMonth == null ? now : pieMonth);
         renderPie(now, db.listTransactions(now.withDayOfMonth(1),
                 now.withDayOfMonth(now.lengthOfMonth()), null, null));
         pieEmpty.setVisible(pie.getData().isEmpty());

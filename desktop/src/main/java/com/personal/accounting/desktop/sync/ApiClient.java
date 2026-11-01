@@ -16,6 +16,16 @@ public class ApiClient {
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
+            // 共享密钥统一在这里加：为空（后端没开校验）就原样放行。
+            // 这里的请求全部指向自家后端，不会带到外部站点上。
+            .addInterceptor(chain -> {
+                Request original = chain.request();
+                String token = SyncConfig.token();
+                if (token.isEmpty()) return chain.proceed(original);
+                return chain.proceed(original.newBuilder()
+                        .header("X-Sync-Token", token)
+                        .build());
+            })
             .build();
 
     public <T> T post(String path, Object body, Class<T> cls) throws IOException {

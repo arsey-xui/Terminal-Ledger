@@ -14,4 +14,11 @@ public class SyncProperties {
 
     /** 单次分页大小。 */
     private Integer pullPageSize = 500;
+
+    /**
+     * 共享密钥。非空时除 {@code /api/health} 外的请求都要带 {@code X-Sync-Token} 头。
+     *
+     * <p><b>留空表示不校验</b> —— 这是升级期的过渡安排，见 {@link SyncTokenFilter}。</p>
+     */
+    private String sharedSecret;
 }

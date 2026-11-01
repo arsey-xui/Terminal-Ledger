@@ -52,6 +52,19 @@ public final class AiAnalysis {
     private static final String K_MODEL = "ai_model";
     /** 自定义分析提示词（明文存放：不是机密，且要能被用户随时看见/改回）。 */
     private static final String K_PROMPT = "ai_prompt";
+    /**
+     * 「存过 Key，但在这台设备上解不开」的标记。
+     *
+     * <p>Key 用 Android Keystore 里不可导出的密钥加密（见 {@link SecretStore}）。系统备份/换机迁移
+     * 或系统重置之后，密文可能还在、那台设备上的 Keystore 密钥却已经不在了，密文永远解不开。
+     * 这时用这个标记代替静默删除，好让界面能说清「为什么需要重新填一次」。</p>
+     */
+    private static final String K_KEY_LOST = "ai_key_lost";
+    /** 用不了大模型时的说明，交给界面显示在分析结果上（比一句「已改用规则引擎」有用）。 */
+    private static final String KEY_LOST_NOTE =
+            "已保存的 API Key 在这台设备上无法解密（换机迁移或系统重置后会这样），已改用本地规则引擎；"
+                    + "到「AI 设置」重新填写一次即可恢复大模型分析";
+
     private static final String DEFAULT_BASE = "https://api.openai.com/v1";
     private static final String DEFAULT_MODEL = "gpt-4o-mini";
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
@@ -101,8 +114,14 @@ public final class AiAnalysis {
         if (stored == null || stored.isEmpty()) return "";
         String plain = SecretStore.decode(stored);
         if (plain != null) return plain;
-        p.edit().remove(K_KEY).apply();
+        // 留个标记再清：否则用户只会看到大模型悄悄变回规则引擎，不知道为什么
+        p.edit().remove(K_KEY).putBoolean(K_KEY_LOST, true).apply();
         return "";
+    }
+
+    /** 是否发生过「Key 在这台设备上解不开、已被清除」。界面据此给出一次明确说明。 */
+    public static boolean keyLost(Context context) {
+        return prefs(context).getBoolean(K_KEY_LOST, false);
     }
 
     public static String baseUrl(Context context) {
@@ -163,20 +182,17 @@ public final class AiAnalysis {
                 .putString(K_BASE, blankToDefault(baseUrl, DEFAULT_BASE))
                 .putString(K_MODEL, blankToDefault(model, DEFAULT_MODEL))
                 .putString(K_PROMPT, prompt == null ? "" : prompt.trim())
+                // 用户已经面对过一次了，重新保存之后不必再提醒
+                .putBoolean(K_KEY_LOST, false)
                 .apply();
     }
 
-    /** 明确选择「只用规则引擎」。 */
+    /** 明确选择「只用规则引擎」。Key 保留：想彻底删掉就清空 Key 后调 {@link #save}。 */
     public static void useRulesOnly(Context context) {
-        prefs(context).edit().putBoolean(K_DONE, true).putBoolean(K_USE_LLM, false).apply();
-    }
-
-    /** 切回本地规则引擎：关闭大模型并清除已保存的 API Key（接口地址与模型保留，便于以后再次启用）。 */
-    public static void clearLlm(Context context) {
         prefs(context).edit()
                 .putBoolean(K_DONE, true)
                 .putBoolean(K_USE_LLM, false)
-                .remove(K_KEY)
+                .putBoolean(K_KEY_LOST, false)
                 .apply();
     }
 
@@ -190,7 +206,8 @@ public final class AiAnalysis {
     public static Result analyze(Context context, int year, int month) {
         String rules = LocalAnalyzer.generate(context, year, month);
         if (!canUseLlm(context)) {
-            return new Result(rules, ENGINE_LOCAL, null);
+            // canUseLlm() 内部读过 Key，所以此刻的 keyLost() 是最新的
+            return new Result(rules, ENGINE_LOCAL, keyLost(context) ? KEY_LOST_NOTE : null);
         }
         try {
             // 规则正文（含日平均 / 日标准差 / 日中位数）就是大模型的上下文，模型不用自己算

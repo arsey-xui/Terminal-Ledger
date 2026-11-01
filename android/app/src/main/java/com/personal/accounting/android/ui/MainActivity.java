@@ -63,6 +63,7 @@ public class MainActivity extends AppCompatActivity {
         // 恢复用户在“设置”里填写的后端地址，保证 release 包可改服务器
         SharedPreferences sp = getSharedPreferences("sync_prefs", Context.MODE_PRIVATE);
         SyncConfig.BASE_URL = sp.getString("base_url", SyncConfig.BASE_URL);
+        SyncConfig.loadToken(this);
 
         // 周期记账：每次打开应用把到期的规则生成「待确认项」（幂等，不会重复生成）
         new Thread(() -> {
@@ -220,6 +221,22 @@ public class MainActivity extends AppCompatActivity {
      * <p>代价：每个标签的 Fragment 会常驻（被 hide 而不是销毁），切回来时保持上次的状态，
      * 但图表不会重播生长动画。</p>
      */
+    /**
+     * 从历史列表进入编辑：切到记账页并把这条流水填进表单。
+     *
+     * <p>先 {@code setSelectedItemId} 让底部导航的选中态跟上，再显式切页：只靠前者不够 ——
+     * 选中态本来就在记账页时它的回调不会触发（同上面处理分享图片的那段注释）。</p>
+     */
+    public void editTransaction(String clientId) {
+        if (clientId == null) return;
+        nav.setSelectedItemId(R.id.nav_record);
+        switchTo(indexOfNavId(R.id.nav_record));
+        Fragment f = getSupportFragmentManager().findFragmentByTag(TAG_RECORD);
+        if (f instanceof RecordFragment) {
+            ((RecordFragment) f).loadForEdit(clientId);
+        }
+    }
+
     private void switchTo(int index) {
         switchTo(index, null);
     }

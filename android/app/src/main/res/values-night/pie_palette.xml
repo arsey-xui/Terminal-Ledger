@@ -10,12 +10,16 @@
       （小扇区本来就标在环外）。这样每个扇区的标签都能拿到合适的反色。
       最大的扇区是酸橙绿（品牌色、亮度约 0.8，配黑字），其次交给浅灰。
     -->
+    <!-- 与浅色同一组色相、同一顺序，只是整体提亮降饱和（色值见 values-night/colors.xml）。
+         相邻两块刻意错开色系，颜色数不够时由 ChartColors.pieColors 保证相邻两块不同色。 -->
     <array name="pie_palette">
-        <item>@color/primary</item>
-        <item>@color/text_secondary</item>
-        <item>@color/chart_text</item>
-        <item>@color/expense</item>
-        <item>@color/chart_grid</item>
-        <item>@color/primary_dark</item>
+        <item>@color/pie_1</item>
+        <item>@color/pie_2</item>
+        <item>@color/pie_3</item>
+        <item>@color/pie_4</item>
+        <item>@color/pie_5</item>
+        <item>@color/pie_6</item>
+        <item>@color/pie_7</item>
+        <item>@color/pie_8</item>
     </array>
 </resources>

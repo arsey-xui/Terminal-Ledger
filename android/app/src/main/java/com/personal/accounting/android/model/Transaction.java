@@ -11,7 +11,6 @@ public class Transaction {
     public String categoryClientId;
     public String accountClientId;
     public String note;
-    public String photoPath;
     public String source;
     public long lastModified;
     public boolean deleted;

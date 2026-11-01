@@ -16,6 +16,7 @@ import com.github.mikephil.charting.utils.Utils;
 import com.github.mikephil.charting.utils.ViewPortHandler;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
@@ -38,6 +39,15 @@ public class PieSliceLabelRenderer extends PieChartRenderer {
     /** 整个标签块的缩放下限：再挤也不小于基准字号的这个比例，避免出现看不清的小字。 */
     private static final float MIN_TEXT_SCALE = 0.72f;
 
+    /**
+     * 相位到这个值之后标签才开始淡入，到 1.0 完全不透明。
+     *
+     * <p>扇区是按相位生长的（见 {@code PieChartRenderer}：起点与扫角都乘 phaseY）。相位很小时
+     * 所有扇区都挤在 12 点方向，此时把标签画上去就是一团叠字；等扇区基本长到位置再让标签出现，
+     * 淡入期间位置仍然跟着扇区走，就不会有「图形还没到、标签先到」的悬空感。</p>
+     */
+    private static final float LABEL_FADE_FROM = 0.85f;
+
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     /** 分类名的描边：压在任意底色上都要有轮廓，颜色随反色切换。 */
     private final Paint nameHaloPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -54,6 +64,13 @@ public class PieSliceLabelRenderer extends PieChartRenderer {
     private final int labelBackgroundColor;
     /** 当前扇区选定的标签反色，每个扇区绘制前由 {@link #applySliceColors} 更新。 */
     private int currentLabelColor;
+
+    /**
+     * 每一侧**共用**的引线走廊 x（见 {@link #computeCorridors}）。
+     * 文字放在走廊外侧，所以同侧引线不可能穿过任何一条标签的文字。
+     */
+    private float leftCorridorX = Float.NaN;
+    private float rightCorridorX = Float.NaN;
 
     public PieSliceLabelRenderer(PieChart chart, ViewPortHandler viewPortHandler, ChartAnimator animator,
                                  float minPercentInside, float amountSizePx, float nameSizePx,
@@ -130,11 +147,23 @@ public class PieSliceLabelRenderer extends PieChartRenderer {
         for (PieEntry e : entries) total += e.getValue();
         if (total <= 0) return;
 
+        // 扇区在动画期间按相位缩放（PieChartRenderer：起点 = 旋转角 + 累积角*phaseY，
+        // 扫角 = 扇区角*phaseY），所以标签必须用同一个相位定位。此前这里按**最终**角度算位置，
+        // 动画还没扫到、标签已经画在终点上 —— 就是「标签悬在空中、和扇区对不上」。
+        float phase = mAnimator.getPhaseY();
+        float appear = (phase - LABEL_FADE_FROM) / (1f - LABEL_FADE_FROM);
+        if (appear <= 0f) return;
+        if (appear > 1f) appear = 1f;
+        int labelAlpha = Math.round(appear * 255f);
+
         MPPointF center = mChart.getCenterCircleBox();
         float radius = mChart.getRadius();
         float holeRadius = radius / 100f * mChart.getHoleRadius();
         float sliceAngle = 360f / total;
-        float currentAngle = mChart.getRotationAngle();
+        float rotationAngle = mChart.getRotationAngle();
+        // 两个累积角：cur 按相位缩放（这一帧画到哪），full 不缩放（最终画到哪）
+        float curAngle = rotationAngle;
+        float fullAngle = rotationAngle;
         float safeRadius = radius - Utils.convertDpToPixel(4f);
 
         // 外置标签先收集、再统一排布、最后绘制。
@@ -146,9 +175,12 @@ public class PieSliceLabelRenderer extends PieChartRenderer {
         // 的度量与绘制语句只有一份实现，环外不可能再出现「金额不显示」这类分歧。
         for (int i = 0; i < entries.size(); i++) {
             PieEntry entry = entries.get(i);
-            float sweep = sliceAngle * entry.getValue();
-            float midAngle = currentAngle + sweep / 2f;
-            currentAngle += sweep;
+            float fullSweep = sliceAngle * entry.getValue();
+            float sweep = fullSweep * phase;
+            float midAngle = curAngle + sweep / 2f;
+            curAngle += sweep;
+            float fullMidAngle = fullAngle + fullSweep / 2f;
+            fullAngle += fullSweep;
 
             double rad = Math.toRadians(midAngle);
             float cos = (float) Math.cos(rad);
@@ -156,17 +188,28 @@ public class PieSliceLabelRenderer extends PieChartRenderer {
             String amountText = formatAmount(entry.getValue());
             String nameText = labelOf(entry);
             boolean bigSlice = entry.getValue() / total * 100f > minPercentInside;
+            float labelRadius = (radius + holeRadius) / 2f;
 
             // 先按这个扇区的颜色定好反色，再画两行字
             applySliceColors(set, i);
 
             float scale = 1f;
-            float labelRadius = (radius + holeRadius) / 2f;
             boolean inside = false;
             if (bigSlice) {
-                scale = fitScale(amountText, nameText, center, safeRadius, labelRadius,
-                        holeRadius, cos, sin, sweep);
-                inside = scale > 0f;
+                // 「放环内还是环外」以及字号都按**最终**扇区定：动画中途改摆法或改字号，
+                // 标签会在环内/环外之间跳、文字大小也会抖。
+                double fullRad = Math.toRadians(fullMidAngle);
+                scale = fitScale(amountText, nameText, center, safeRadius, labelRadius, holeRadius,
+                        (float) Math.cos(fullRad), (float) Math.sin(fullRad), fullSweep);
+                if (scale > 0f) {
+                    // 最终摆得下：这一帧扇区还没长到那个宽度就先不画。不能退到环外 ——
+                    // 那会让同一枚标签在动画中途从环内跳到环外。
+                    if (!fitsAtScale(amountText, nameText, center, safeRadius, labelRadius,
+                            holeRadius, cos, sin, sweep, scale)) {
+                        continue;
+                    }
+                    inside = true;
+                }
             }
 
             if (inside) {
@@ -176,17 +219,22 @@ public class PieSliceLabelRenderer extends PieChartRenderer {
                 drawTwoLines(c, amountText, nameText,
                         amountSizePx * scale, nameSizePx * scale,
                         x, y, Paint.Align.CENTER, currentLabelColor, true,
-                        Paint.Style.STROKE, haloPaintFor(currentLabelColor));
+                        Paint.Style.STROKE, haloPaintFor(currentLabelColor), labelAlpha);
                 continue;
             }
             outside.add(new OutsideLabel(center, radius, cos, sin, amountText, nameText));
         }
 
         layoutOutsideLabels(outside);
+        computeCorridors(outside);
         for (OutsideLabel label : outside) {
-            drawOutside(c, label);
+            drawOutside(c, label, labelAlpha);
         }
         MPPointF.recycleInstance(center);
+        // 把透明度还回去：这三支 Paint 是渲染器自己的，别把淡入用的透明度留给下一次绘制
+        paint.setAlpha(255);
+        nameHaloPaint.setAlpha(255);
+        linePaint.setAlpha(255);
     }
 
     /**
@@ -198,17 +246,20 @@ public class PieSliceLabelRenderer extends PieChartRenderer {
      * @param centerVertically true 时按块中心对齐，false 时按顶边对齐
      * @param haloStyle  描边样式：环内用 STROKE 勾轮廓；环外用 FILL 垫底
      * @param haloColor  描边/垫底色
+     * @param alpha      整体透明度（0-255）：动画淡入用，静态时传 255
      */
     private void drawTwoLines(Canvas c, String amount, String name,
                               float amountSize, float nameSize,
                               float x, float anchorY, Paint.Align align,
                               int color, boolean centerVertically,
-                              Paint.Style haloStyle, int haloColor) {
+                              Paint.Style haloStyle, int haloColor, int alpha) {
         // 行高按**本次实际字号**算：环内会缩字号，用基准字号算会让两行间距偏大
         float line = lineHeight(amountSize);
 
         paint.setTypeface(Typeface.DEFAULT_BOLD);
         paint.setColor(color);
+        // setColor 会把透明度重置成颜色自带的值，所以透明度必须在它之后设
+        paint.setAlpha(alpha);
         paint.setTextSize(amountSize);
         paint.setTextAlign(align);
         float firstBaseline = centerVertically ? anchorY - line / 2f : anchorY - paint.ascent();
@@ -217,6 +268,7 @@ public class PieSliceLabelRenderer extends PieChartRenderer {
         // 垫底/描边只垫分类名那一行：金额与分类名分处不同基线，不会互相覆盖
         nameHaloPaint.setStyle(haloStyle);
         nameHaloPaint.setColor(haloColor);
+        nameHaloPaint.setAlpha(alpha);
         nameHaloPaint.setTextSize(nameSize);
         nameHaloPaint.setTextAlign(align);
         c.drawText(name, x, nameBaseline, nameHaloPaint);
@@ -226,6 +278,7 @@ public class PieSliceLabelRenderer extends PieChartRenderer {
 
         paint.setTypeface(Typeface.DEFAULT);
         paint.setColor(color);
+        paint.setAlpha(alpha);
         paint.setTextSize(nameSize);
         c.drawText(name, x, nameBaseline, paint);
 
@@ -242,15 +295,27 @@ public class PieSliceLabelRenderer extends PieChartRenderer {
                            float labelRadius, float holeRadius,
                            float cos, float sin, float sweep) {
         for (float s = 1f; s >= MIN_TEXT_SCALE - 0.001f; s -= 0.04f) {
-            float aSize = amountSizePx * s;
-            float nSize = nameSizePx * s;
-            float width = Math.max(measure(amount, aSize), measure(name, nSize));
-            float height = lineHeight(aSize) * 2f;
-            if (fitsAt(center, safeRadius, labelRadius, holeRadius, cos, sin, sweep, width, height)) {
+            if (fitsAtScale(amount, name, center, safeRadius, labelRadius, holeRadius,
+                    cos, sin, sweep, s)) {
                 return s;
             }
         }
         return 0f;
+    }
+
+    /**
+     * 按给定字号比例量出标签块尺寸，判断它在**给定扫角**的扇区里放不放得下。
+     *
+     * <p>扫角由调用方给：定字号时传最终扫角，判断「这一帧画不画」时传当前帧的扫角。</p>
+     */
+    private boolean fitsAtScale(String amount, String name, MPPointF center, float safeRadius,
+                                float labelRadius, float holeRadius,
+                                float cos, float sin, float sweep, float scale) {
+        float aSize = amountSizePx * scale;
+        float nSize = nameSizePx * scale;
+        float width = Math.max(measure(amount, aSize), measure(name, nSize));
+        float height = lineHeight(aSize) * 2f;
+        return fitsAt(center, safeRadius, labelRadius, holeRadius, cos, sin, sweep, width, height);
     }
 
     /** 一个待绘制的环外标签：锚点方向与两行文字（颜色在绘制时按页面背景算）。 */
@@ -258,6 +323,8 @@ public class PieSliceLabelRenderer extends PieChartRenderer {
         final float x1, y1, x2, y2;
         final boolean rightSide;
         final String amount, name;
+        /** 圆心与半径：标签被纵向推开后，要按它重算「文字那一行环有多宽」。 */
+        final float centerX, centerY, radius;
         /** 由 {@link #layoutOutsideLabels} 算出：文字块顶部 y。 */
         float textTop;
 
@@ -271,6 +338,9 @@ public class PieSliceLabelRenderer extends PieChartRenderer {
             this.rightSide = cos >= 0;
             this.amount = amount;
             this.name = name;
+            this.centerX = center.x;
+            this.centerY = center.y;
+            this.radius = radius;
             this.textTop = 0f;
         }
     }
@@ -333,65 +403,107 @@ public class PieSliceLabelRenderer extends PieChartRenderer {
         // 环外标签统一用基准字号，所以整块高度对每条都一样，算一次即可
         float blockH = lineHeight(amountSizePx) * 2f;
 
-        // 自上而下推进一遍：每枚先取「贴着自己锚点」的理想位置，再保证不早于
-        // 「前一枚 + 一个行距」。只向下推，所以相邻间距必然成立。
-        //
-        // 顶部越界时向上夹回是安全的：夹回只让这一枚更高，下一枚的紧邻下界是在
-        // 这一枚**最终**位置的基础上算的，仍然落在它下方一个行距处。
-        // （反方向的「自下而上再推一次」不行：那会把已推开的间距又推回去、恢复重叠。）
+        // 排布数学在 PieLabelGeometry（纯逻辑、不依赖 Android，可在 JVM 上单测）
+        float[] foldY = new float[side.size()];
+        boolean[] pointsUp = new boolean[side.size()];
         for (int i = 0; i < side.size(); i++) {
             OutsideLabel label = side.get(i);
-            float ideal;
-            if (label.y2 <= label.y1) {
-                ideal = label.y2 - blockH;                     // 上半圆：块底贴着锚点（向上长）
-            } else {
-                // 下半圆默认向下长；底部放不下就翻到锚点上方 —— 与其把文字画出图外，不如换个方向
-                ideal = (label.y2 + blockH <= maxY) ? label.y2 : label.y2 - blockH;
-            }
-            if (i > 0) {
-                OutsideLabel prev = side.get(i - 1);
-                float min = prev.textTop + blockH + gapY;
-                if (ideal < min) ideal = min;
-            }
-            label.textTop = Math.max(ideal, minY);
+            foldY[i] = label.y2;
+            pointsUp[i] = label.y2 <= label.y1;
+        }
+        float[] tops = PieLabelGeometry.textTops(foldY, pointsUp, blockH, gapY, minY, maxY);
+        for (int i = 0; i < side.size(); i++) {
+            side.get(i).textTop = tops[i];
         }
     }
 
-    /** 画一条已经排布好的环外标签：引线（内段到锚点、外段到文字中心）+ 两行文字。 */
-    private void drawOutside(Canvas c, OutsideLabel label) {
+    /**
+     * 每一侧只留**一条**引线走廊。
+     *
+     * <p>以前每条标签各算各的走廊：按自己那段纵向范围里环的外沿算，谁更靠近圆心的高度，
+     * 谁就被推到更外侧。于是在同一侧，一条标签的竖直引线可能落在另一条标签文字的水平范围内，
+     * 直接从字中间穿过去 —— 截图里「43元」被一条竖线穿过就是这样。</p>
+     *
+     * <p>同侧统一到一条走廊后，所有竖段共线、文字一律在走廊外侧，引线再也不可能穿过文字。
+     * 代价是同侧几条引线的竖段会重叠成一段共线（看起来像一条总线），指向关系靠各自的斜段区分。</p>
+     */
+    private void computeCorridors(List<OutsideLabel> labels) {
+        leftCorridorX = Float.NaN;
+        rightCorridorX = Float.NaN;
+        if (labels.isEmpty()) return;
+
+        float viewLeft = Utils.convertDpToPixel(2f);
+        float viewRight = mViewPortHandler.getChartWidth() - Utils.convertDpToPixel(2f);
+        float gap = Utils.convertDpToPixel(4f);
+        float ringGap = Utils.convertDpToPixel(6f);
+        float blockH = lineHeight(amountSizePx) * 2f;
+
+        float[] leftEdges = new float[labels.size()];
+        float[] rightEdges = new float[labels.size()];
+        int leftCount = 0;
+        int rightCount = 0;
+        float widestLeft = 0f;
+        float widestRight = 0f;
+        for (OutsideLabel label : labels) {
+            float spanTop = Math.min(label.y2, label.textTop);
+            float spanBottom = Math.max(label.y2, label.textTop + blockH);
+            float edge = ringEdgeX(label, spanTop, spanBottom, label.rightSide);
+            float textWidth = Math.max(measure(label.amount, amountSizePx), measure(label.name, nameSizePx));
+            if (label.rightSide) {
+                rightEdges[rightCount++] = edge + ringGap;
+                widestRight = Math.max(widestRight, textWidth);
+            } else {
+                leftEdges[leftCount++] = edge - ringGap;
+                widestLeft = Math.max(widestLeft, textWidth);
+            }
+        }
+
+        // 走廊的合成（取最外侧 + 保证最宽文字仍在视图内）在 PieLabelGeometry 里
+        if (leftCount > 0) {
+            leftCorridorX = PieLabelGeometry.corridorX(
+                    Arrays.copyOf(leftEdges, leftCount), false, gap, widestLeft, viewLeft, viewRight);
+        }
+        if (rightCount > 0) {
+            rightCorridorX = PieLabelGeometry.corridorX(
+                    Arrays.copyOf(rightEdges, rightCount), true, gap, widestRight, viewLeft, viewRight);
+        }
+    }
+
+    /** 画一条已经排布好的环外标签：引线（环边 → 走廊 → 文字那一行）+ 两行文字。 */
+    /**
+     * 画一条已经排布好的环外标签：引线（环边 → 走廊 → 文字那一行）+ 两行文字。
+     *
+     * <p>折点落在**同侧共用的走廊**上（见 {@link #computeCorridors}），不再每条标签各算各的：
+     * 各算各的时候，越接近圆心高度的标签走廊越靠外，它的竖直段正好横穿另一条标签的文字。</p>
+     */
+    private void drawOutside(Canvas c, OutsideLabel label, int alpha) {
         float amountSize = amountSizePx;
         float nameSize = nameSizePx;
         float line = lineHeight(amountSize);
-        float centerY = label.textTop + line;
-
-        c.drawLine(label.x1, label.y1, label.x2, label.y2, linePaint);
-        c.drawLine(label.x2, label.y2, label.x2, centerY, linePaint);
+        float blockH = line * 2f;
+        float textCenterY = label.textTop + line;
 
         float gap = Utils.convertDpToPixel(4f);
-        float textWidth = Math.max(measure(label.amount, amountSize), measure(label.name, nameSize));
-        // 可用范围取视图本身，不能用 contentLeft()/contentRight()：PieChart 的 contentRect
-        // 已经为标签预留过空间（圆环因此也变小），拿它当边界会让左右两侧的标签过早判定
-        // 「放不下」而翻到引线另一侧；翻过去的方向正好是圆环所在的一侧，标签就压在环上了。
-        float viewLeft = Utils.convertDpToPixel(2f);
-        float viewRight = mViewPortHandler.getChartWidth() - Utils.convertDpToPixel(2f);
-
-        float x;
-        Paint.Align align;
-        if (label.rightSide) {
-            align = Paint.Align.LEFT;
-            x = label.x2 + gap;
-            if (x + textWidth > viewRight) {          // 右侧放不下 -> 翻到引线左边
-                align = Paint.Align.RIGHT;
-                x = label.x2 - gap;
-            }
-        } else {
-            align = Paint.Align.RIGHT;
-            x = label.x2 - gap;
-            if (x - textWidth < viewLeft) {           // 左侧放不下 -> 翻到引线右边
-                align = Paint.Align.LEFT;
-                x = label.x2 + gap;
-            }
+        boolean right = label.rightSide;
+        float outerX = right ? rightCorridorX : leftCorridorX;
+        if (Float.isNaN(outerX)) {
+            // 兜底：正常流程里 computeCorridors 已经给每一侧算好走廊，走不到这里；
+            // 真走到了就贴着环外沿画，至少不会让整条标签消失。
+            float spanTop = Math.min(label.y2, label.textTop);
+            float spanBottom = Math.max(label.y2, label.textTop + blockH);
+            float ringGap = Utils.convertDpToPixel(6f);
+            float ringEdge = ringEdgeX(label, spanTop, spanBottom, right);
+            outerX = right ? ringEdge + ringGap : ringEdge - ringGap;
         }
+        float textInner = right ? outerX + gap : outerX - gap;
+        Paint.Align align = right ? Paint.Align.LEFT : Paint.Align.RIGHT;
+
+        linePaint.setAlpha(alpha);
+        // 斜段直接落到**文字那一行**，再从走廊横一小段接到文字：没有竖段了。
+        // 同侧各行按锚点顺序排列（distributeSide 排的），所以这些斜段按行序收敛、互不相交，
+        // 也不可能压到别人的文字 —— 文字永远在走廊外侧。
+        c.drawLine(label.x1, label.y1, outerX, textCenterY, linePaint);
+        c.drawLine(outerX, textCenterY, textInner, textCenterY, linePaint);
 
         // 环外标签压在**页面背景**上，不是压在扇区上，所以文字颜色要按页面背景算：
         // 早先用扇区反色，浅色模式下深灰扇区会算成白字 —— 白字画在白页面上直接消失。
@@ -401,8 +513,19 @@ public class PieSliceLabelRenderer extends PieChartRenderer {
         // 区别只有两点：颜色按页面背景取；描边改成实心垫底，用背景色把引线压在文字下面
         // （描边在本例里等于底色，所以实心垫底看不出痕迹，还能顺便遮住穿过的引线）。
         drawTwoLines(c, label.amount, label.name, amountSize, nameSize,
-                x, label.textTop, align, labelColor, false,
-                Paint.Style.FILL, labelBackgroundColor);
+                textInner, label.textTop, align, labelColor, false,
+                Paint.Style.FILL, labelBackgroundColor, alpha);
+    }
+
+    /**
+     * 圆环在 [spanTop, spanBottom] 这段纵向范围里最靠某一侧的外沿 x。
+     *
+     * <p>圆的左右边缘在圆心所在那一行最靠外、离圆心越远越往里收，所以只要取区间内离圆心
+     * 最近的那一行来算。区间整个落在圆外时按圆心算，等价于「这一行没有环」。</p>
+     */
+    private static float ringEdgeX(OutsideLabel label, float spanTop, float spanBottom, boolean right) {
+        return PieLabelGeometry.ringEdgeX(label.centerX, label.centerY, label.radius,
+                spanTop, spanBottom, right);
     }
 
     private float measure(String text, float textSize) {

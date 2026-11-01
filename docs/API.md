@@ -75,9 +75,3 @@
 | GET | `/api/report/transactions?year=&month=` | 某月流水 |
 | GET | `/api/report/category-transactions?year=&month=&categoryClientId=` | 分类下钻 |
 | POST | `/api/report/ai` | AI 消费分析（规则/LLM） |
-
-## 照片
-
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| POST | `/api/photos` (multipart `file`) | 上传账单照片 |

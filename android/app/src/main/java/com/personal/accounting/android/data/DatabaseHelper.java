@@ -19,7 +19,7 @@ import java.util.Map;
 public class DatabaseHelper extends SQLiteOpenHelper {
 
     private static final String DB_NAME = "accounting.db";
-    private static final int DB_VERSION = 3;
+    private static final int DB_VERSION = 4;
 
     private static DatabaseHelper instance;
 
@@ -55,7 +55,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
         db.execSQL("CREATE TABLE transaction_record (" +
                 "client_id TEXT PRIMARY KEY, date TEXT NOT NULL, amount REAL NOT NULL, type TEXT NOT NULL," +
-                "category_client_id TEXT, account_client_id TEXT, note TEXT, photo_path TEXT, source TEXT," +
+                "category_client_id TEXT, account_client_id TEXT, note TEXT, source TEXT," +
                 "last_modified INTEGER NOT NULL, deleted INTEGER DEFAULT 0, created_at TEXT, updated_at TEXT)");
         db.execSQL("CREATE INDEX idx_txn_date ON transaction_record(date)");
         db.execSQL("CREATE INDEX idx_txn_lm ON transaction_record(last_modified)");
@@ -73,8 +73,12 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 "category_client_id TEXT, account_client_id TEXT, note TEXT, sort_order INTEGER DEFAULT 0," +
                 "last_modified INTEGER NOT NULL, deleted INTEGER DEFAULT 0, created_at TEXT, updated_at TEXT)");
 
+        // last_sync：pull 水位（服务端时钟）；push_watermark：push 水位（本机 last_modified 时钟）。
+        // 两个域不能混用同一个值，所以分成两列。
         db.execSQL("CREATE TABLE sync_state (" +
-                "device_id TEXT PRIMARY KEY, last_sync INTEGER NOT NULL DEFAULT 0)");
+                "device_id TEXT PRIMARY KEY, " +
+                "last_sync INTEGER NOT NULL DEFAULT 0, " +
+                "push_watermark INTEGER NOT NULL DEFAULT 0)");
 
         createRecurringTables(db);
     }
@@ -244,9 +248,14 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             // 2 -> 3：新增联合索引
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_txn_cat_date ON transaction_record(category_client_id, date)");
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_txn_acct_date ON transaction_record(account_client_id, date)");
-            return;
         }
-        // 其它/未知的结构变更：沿用原来的重建策略（个人记账数据可重新同步）
+        if (oldVersion < 4) {
+            // 3 -> 4：增量同步的 push 水位。走 ALTER 而不是重建库 ——
+            // 重建会连本地账本一起清掉，而这里只加一列。
+            db.execSQL("ALTER TABLE sync_state ADD COLUMN push_watermark INTEGER NOT NULL DEFAULT 0");
+        }
+        if (oldVersion <= 3) return;   // 1/2/3 都属于已知的增量升级，处理完就结束
+        // 其它/未知的结构变更：沿用原来的重建策略（本地数据可以重新同步回来）
         onDrop(db);
         onCreate(db);
     }

@@ -27,6 +27,7 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.fragment.app.Fragment;
 
 import com.personal.accounting.android.AccountingApp;
+import com.personal.accounting.android.BuildConfig;
 import com.personal.accounting.android.R;
 import com.personal.accounting.android.data.AccountRepo;
 import com.personal.accounting.android.data.BackupService;
@@ -125,7 +126,7 @@ public class SettingsFragment extends Fragment {
         urlInput = v.findViewById(R.id.url_input);
         statusView = v.findViewById(R.id.sync_status);
         versionView = v.findViewById(R.id.version_view);
-        versionView.setText("当前版本：" + currentVersion());
+        versionView.setText(versionLine());
         catRepo = new CategoryRepo(requireContext());
         accountRepo = new AccountRepo(requireContext());
         recurringRepo = new RecurringRepo(requireContext());
@@ -134,19 +135,8 @@ public class SettingsFragment extends Fragment {
         SharedPreferences sp = requireContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         urlInput.setText(SyncConfig.BASE_URL);
 
-        v.findViewById(R.id.btn_save_url).setOnClickListener(x -> {
-            String url = urlInput.getText().toString().trim();
-            if (url.isEmpty()) {
-                Toast.makeText(requireContext(), "请先填写后端地址，例如 http://192.168.1.100:8080", Toast.LENGTH_LONG).show();
-                return;
-            }
-            if (!url.startsWith("http://") && !url.startsWith("https://")) {
-                url = "http://" + url;
-            }
-            SyncConfig.BASE_URL = url;
-            sp.edit().putString("base_url", url).apply();
-            Toast.makeText(requireContext(), "已保存后端地址", Toast.LENGTH_SHORT).show();
-        });
+        v.findViewById(R.id.btn_save_url).setOnClickListener(
+                x -> showServerConfigDialog(urlInput.getText().toString().trim()));
 
         syncRetryButton = v.findViewById(R.id.btn_sync_retry);
         v.findViewById(R.id.btn_sync_now).setOnClickListener(x -> startSync(true));
@@ -227,6 +217,20 @@ public class SettingsFragment extends Fragment {
         mainHandler.removeCallbacks(syncStatusTick);
     }
 
+    /**
+     * 页面在底部导航里被切走 / 切回时由系统调用。
+     *
+     * <p>本页常驻（hide/show）意味着 {@code onResume} 只跑一次，切回来时状态行还是上次
+     * 离开时的内容 —— 期间在记账页记的账、待推送条数、上次同步时间都不会更新。
+     * 重新可见时补一次。</p>
+     */
+    @Override
+    public void onHiddenChanged(boolean hidden) {
+        super.onHiddenChanged(hidden);
+        if (hidden || getView() == null) return;
+        refreshSyncStatus();
+    }
+
     /** 触发一次同步；手动点才弹提示，其它情况只更新状态行。 */
     private void startSync(boolean showToast) {
         statusView.setText("正在同步…");
@@ -255,6 +259,28 @@ public class SettingsFragment extends Fragment {
         } catch (Exception e) {
             return "未知";
         }
+    }
+
+    /**
+     * 设置页的版本行：版本名 + versionCode + 构建时间 + 提交号。
+     *
+     * <p>只显示 versionName 分不出「装的是哪一个构建」——同一个 versionCode 曾被多个行为不同的
+     * 构建用过，出问题时报一串 1.3.0 对不上号。versionCode 由打包脚本每次自增，
+     * 构建时间与提交号来自 BuildConfig（见 app/build.gradle）。</p>
+     */
+    private String versionLine() {
+        int code = 0;
+        try {
+            code = requireContext().getPackageManager()
+                    .getPackageInfo(requireContext().getPackageName(), 0).versionCode;
+        } catch (Exception ignore) {
+            // 读不到就只显示版本名与构建信息，不因为这一行让整页失败
+        }
+        StringBuilder sb = new StringBuilder("当前版本：").append(currentVersion());
+        if (code > 0) sb.append(" (").append(code).append(')');
+        if (!BuildConfig.BUILD_TIME.isEmpty()) sb.append("\n构建：").append(BuildConfig.BUILD_TIME);
+        if (!BuildConfig.GIT_COMMIT.isEmpty()) sb.append(" · ").append(BuildConfig.GIT_COMMIT);
+        return sb.toString();
     }
 
     private void checkUpdate() {
@@ -386,8 +412,56 @@ public class SettingsFragment extends Fragment {
     private void confirmReset(String what, String message, Runnable action) {
         new AlertDialog.Builder(requireContext())
                 .setTitle("重置" + what + "？")
-                .setMessage(message + "\n\n此操作影响本地数据，并会在下次同步时同步到云端。")
-                .setPositiveButton("重置", (d, w) -> action.run())
+                .setMessage(message + "\n\n此操作影响本地数据，并会立即同步到云端。")
+                .setPositiveButton("重置", (d, w) -> {
+                    action.run();
+                    SyncManager.requestAfterWrite();
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    /**
+     * 「后端地址 + 共享密钥」一起配：这两件事本来就是配套的。
+     *
+     * <p>密钥留空表示后端没开校验，请求里会带一个空的 X-Sync-Token 头，
+     * 未开启校验的后端不检查它。</p>
+     */
+    private void showServerConfigDialog(String currentUrl) {
+        LinearLayout box = new LinearLayout(requireContext());
+        box.setOrientation(LinearLayout.VERTICAL);
+        int pad = (int) (16 * getResources().getDisplayMetrics().density);
+        box.setPadding(pad, pad / 2, pad, 0);
+
+        EditText urlEdit = new EditText(requireContext());
+        urlEdit.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        urlEdit.setHint("后端地址，如 http://192.168.1.100:8080");
+        urlEdit.setText(currentUrl == null ? "" : currentUrl);
+        box.addView(urlEdit);
+
+        EditText tokenEdit = new EditText(requireContext());
+        tokenEdit.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        tokenEdit.setHint("共享密钥（后端没开校验就留空）");
+        tokenEdit.setText(SyncConfig.token());
+        box.addView(tokenEdit);
+
+        new AlertDialog.Builder(requireContext())
+                .setTitle("后端连接")
+                .setView(box)
+                .setPositiveButton("保存", (d, w) -> {
+                    String url = urlEdit.getText().toString().trim();
+                    if (!url.isEmpty() && !url.startsWith("http://") && !url.startsWith("https://")) {
+                        url = "http://" + url;
+                    }
+                    SyncConfig.BASE_URL = url;
+                    requireContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                            .edit().putString("base_url", url).apply();
+                    SyncConfig.saveToken(requireContext(), tokenEdit.getText().toString());
+                    urlInput.setText(url);
+                    Toast.makeText(requireContext(), "已保存后端连接设置", Toast.LENGTH_SHORT).show();
+                })
                 .setNegativeButton("取消", null)
                 .show();
     }
@@ -406,13 +480,89 @@ public class SettingsFragment extends Fragment {
         }
         new AlertDialog.Builder(requireContext())
                 .setTitle("管理分类")
-                .setItems(names, (d, which) -> {
-                    Category c = cats.get(which);
-                    confirmDelete(c.name, () -> {
-                        catRepo.delete(c.clientId);
-                        Toast.makeText(requireContext(), "已删除分类：" + c.name, Toast.LENGTH_SHORT).show();
-                    });
+                .setItems(names, (d, which) -> showCategoryActions(cats.get(which)))
+                .show();
+    }
+
+    /** 点某个分类之后：重命名还是删除。 */
+    private void showCategoryActions(Category c) {
+        new AlertDialog.Builder(requireContext())
+                .setTitle(c.name)
+                .setItems(new String[]{"重命名", "删除"}, (d, which) -> {
+                    if (which == 0) {
+                        renameCategory(c);
+                    } else {
+                        confirmDelete(c.name, () -> {
+                            catRepo.delete(c.clientId);
+                            Toast.makeText(requireContext(), "已删除分类：" + c.name, Toast.LENGTH_SHORT).show();
+                        });
+                    }
                 })
+                .show();
+    }
+
+    /**
+     * 重命名分类：clientId 不变，只改 name 和 lastModified，然后同步。
+     * 历史流水按 clientId 关联分类，所以改完名字它们显示的分类名会跟着变。
+     */
+    private void renameCategory(Category c) {
+        promptRename("重命名分类", c.name, name -> {
+            c.name = name;
+            c.lastModified = System.currentTimeMillis();
+            catRepo.upsertLww(c);
+            Toast.makeText(requireContext(), "已重命名为：" + name, Toast.LENGTH_SHORT).show();
+            manageCategories();     // 重新打开列表，能立刻看到新名字
+        });
+    }
+
+    /** 点某个账户之后：重命名还是删除。 */
+    private void showAccountActions(Account a) {
+        new AlertDialog.Builder(requireContext())
+                .setTitle(a.name)
+                .setItems(new String[]{"重命名", "删除"}, (d, which) -> {
+                    if (which == 0) {
+                        renameAccount(a);
+                    } else {
+                        confirmDelete(a.name, () -> {
+                            accountRepo.delete(a.clientId);
+                            Toast.makeText(requireContext(), "已删除账户：" + a.name, Toast.LENGTH_SHORT).show();
+                        });
+                    }
+                })
+                .show();
+    }
+
+    /** 重命名账户：同样只改 name 与 lastModified，余额口径不受影响。 */
+    private void renameAccount(Account a) {
+        promptRename("重命名账户", a.name, name -> {
+            a.name = name;
+            a.lastModified = System.currentTimeMillis();
+            accountRepo.upsertLww(a);
+            Toast.makeText(requireContext(), "已重命名为：" + name, Toast.LENGTH_SHORT).show();
+            manageAccounts();       // 重新打开列表，能立刻看到新名字
+        });
+    }
+
+    /** 重命名弹窗：预填当前名字，校验非空；名字没变就不写库、不同步。 */
+    private void promptRename(String title, String current,
+                              java.util.function.Consumer<String> onConfirm) {
+        EditText input = new EditText(requireContext());
+        input.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
+        input.setText(current == null ? "" : current);
+        if (current != null) input.setSelection(current.length());
+        new AlertDialog.Builder(requireContext())
+                .setTitle(title)
+                .setView(input)
+                .setPositiveButton("保存", (d, w) -> {
+                    String name = input.getText().toString().trim();
+                    if (name.isEmpty()) {
+                        Toast.makeText(requireContext(), "名字不能为空", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    if (name.equals(current)) return;   // 没改，什么都不做
+                    onConfirm.accept(name);
+                })
+                .setNegativeButton("取消", null)
                 .show();
     }
 
@@ -423,26 +573,37 @@ public class SettingsFragment extends Fragment {
             return;
         }
         String[] names = new String[accs.size()];
-        for (int i = 0; i < accs.size(); i++) names[i] = accs.get(i).name;
+        // 每个账户显示自己的余额；净资产同时写在标题里。口径见 analysis/AccountBalance.java
+        java.util.Map<String, double[]> flows = new com.personal.accounting.android.data.TransactionRepo(
+                requireContext()).flowByAccount(java.time.LocalDate.now());
+        double initialTotal = 0, allIncome = 0, allExpense = 0;
+        for (double[] flow : flows.values()) {
+            allIncome += flow[0];
+            allExpense += flow[1];
+        }
+        for (int i = 0; i < accs.size(); i++) {
+            Account a = accs.get(i);
+            initialTotal += a.initialBalance;
+            double[] flow = flows.get(a.clientId);
+            double balance = com.personal.accounting.android.analysis.AccountBalance.balance(
+                    a.initialBalance, flow == null ? 0 : flow[0], flow == null ? 0 : flow[1]);
+            names[i] = a.name + "　余额 "
+                    + com.personal.accounting.android.analysis.AccountBalance.format(balance);
+        }
+        final String netWorth = com.personal.accounting.android.analysis.AccountBalance.format(
+                com.personal.accounting.android.analysis.AccountBalance.netWorth(
+                        initialTotal, allIncome, allExpense));
         new AlertDialog.Builder(requireContext())
-                .setTitle("管理账户")
-                .setItems(names, (d, which) -> {
-                    Account a = accs.get(which);
-                    confirmDelete(a.name, () -> {
-                        accountRepo.delete(a.clientId);
-                        Toast.makeText(requireContext(), "已删除账户：" + a.name, Toast.LENGTH_SHORT).show();
-                    });
-                })
+                .setTitle("管理账户 · 净资产 " + netWorth)
+                .setItems(names, (d, which) -> showAccountActions(accs.get(which)))
                 .show();
     }
 
     private void confirmDelete(String name, Runnable action) {
-        new AlertDialog.Builder(requireContext())
-                .setTitle("删除确认")
-                .setMessage("删除「" + name + "」？")
-                .setPositiveButton("删除", (d, w) -> action.run())
-                .setNegativeButton("取消", null)
-                .show();
+        ConfirmDialog.show(requireContext(), "删除确认", "删除「" + name + "」？", "删除", () -> {
+            action.run();
+            SyncManager.requestAfterWrite();
+        });
     }
 
     // ---------- 周期记账（自动续费） ----------
@@ -567,6 +728,7 @@ public class SettingsFragment extends Fragment {
 
     private void confirmPending(RecurringPending p) {
         recurringRepo.confirm(p.clientId, null);
+        SyncManager.requestAfterWrite();
         Toast.makeText(requireContext(), "已入账：" + p.date + " " + String.format("%.2f", p.amount) + " 元",
                 Toast.LENGTH_SHORT).show();
         renderRecurring();
@@ -588,6 +750,7 @@ public class SettingsFragment extends Fragment {
                         // 解析失败就沿用原金额
                     }
                     recurringRepo.confirm(p.clientId, amount);
+                    SyncManager.requestAfterWrite();
                     Toast.makeText(requireContext(), "已入账：" + String.format("%.2f", amount) + " 元",
                             Toast.LENGTH_SHORT).show();
                     renderRecurring();
@@ -805,6 +968,7 @@ public class SettingsFragment extends Fragment {
             rule.anchorDate = Recurrence.format(anchor);
             rule.enabled = true;
             recurringRepo.save(rule);
+            SyncManager.requestAfterWrite();
             recurringRepo.materialize(java.time.LocalDate.now());
             Toast.makeText(requireContext(), "已保存规则：" + rule.name, Toast.LENGTH_SHORT).show();
             renderRecurring();
@@ -835,8 +999,10 @@ public class SettingsFragment extends Fragment {
 
         new AlertDialog.Builder(requireContext())
                 .setTitle("导出备份")
-                .setMessage("备份包含全部流水、分类、账户、预算、模板和周期规则，用口令加密（AES-256）。\n"
-                        + "口令丢了这份文件就打不开了，请自己记牢；格式与电脑端一致，可以互相恢复。")
+                .setMessage("备份包含全部流水、分类、账户、预算、模板、周期规则，以及 AI 设置"
+                        + "（含 API Key），用口令加密（AES-256）。\n"
+                        + "口令丢了这份文件就打不开了，请自己记牢；格式与电脑端一致，可以互相恢复。\n"
+                        + "卸载重装或换机之后，靠这份备份就能把账本和 API Key 一起带回来。")
                 .setView(box)
                 .setPositiveButton("选保存位置", (d, w) -> {
                     String p1 = password.getText().toString();
@@ -873,7 +1039,9 @@ public class SettingsFragment extends Fragment {
         new AlertDialog.Builder(requireContext())
                 .setTitle("导入备份")
                 .setMessage("会把备份里的数据合并回本机：缺的记录补上，同一条按修改时间取较新的那条。\n"
-                        + "不会删除你本机现有的记录。")
+                        + "不会删除你本机现有的记录。\n\n"
+                        + "AI 设置同样是「只补不清」：备份里带 API Key 才会写回，恢复一份没配过 Key 的"
+                        + "旧备份不会把现在的 Key 清掉。")
                 .setView(password)
                 .setPositiveButton("导入", (d, w) ->
                         runRestore(source, password.getText().toString().toCharArray()))

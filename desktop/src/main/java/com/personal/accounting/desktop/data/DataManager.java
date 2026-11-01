@@ -43,11 +43,14 @@ public class DataManager implements AutoCloseable {
         try (Statement s = conn.createStatement()) {
             s.execute("CREATE TABLE IF NOT EXISTS accounts (client_id VARCHAR(36) PRIMARY KEY, name VARCHAR(64) NOT NULL, type VARCHAR(32), icon VARCHAR(64), initial_balance DECIMAL(19,2) DEFAULT 0, sort_order INT DEFAULT 0, last_modified BIGINT NOT NULL, deleted INT DEFAULT 0, created_at VARCHAR(30), updated_at VARCHAR(30))");
             s.execute("CREATE TABLE IF NOT EXISTS category (client_id VARCHAR(36) PRIMARY KEY, name VARCHAR(64) NOT NULL, type VARCHAR(16) NOT NULL, icon VARCHAR(64), sort_order INT DEFAULT 0, last_modified BIGINT NOT NULL, deleted INT DEFAULT 0, created_at VARCHAR(30), updated_at VARCHAR(30))");
-            s.execute("CREATE TABLE IF NOT EXISTS transaction_record (client_id VARCHAR(36) PRIMARY KEY, date DATE NOT NULL, amount DECIMAL(19,2) NOT NULL, type VARCHAR(16) NOT NULL, category_client_id VARCHAR(36), account_client_id VARCHAR(36), note VARCHAR(512), photo_path VARCHAR(1024), source VARCHAR(32), last_modified BIGINT NOT NULL, deleted INT DEFAULT 0, created_at VARCHAR(30), updated_at VARCHAR(30))");
+            s.execute("CREATE TABLE IF NOT EXISTS transaction_record (client_id VARCHAR(36) PRIMARY KEY, date DATE NOT NULL, amount DECIMAL(19,2) NOT NULL, type VARCHAR(16) NOT NULL, category_client_id VARCHAR(36), account_client_id VARCHAR(36), note VARCHAR(512), source VARCHAR(32), last_modified BIGINT NOT NULL, deleted INT DEFAULT 0, created_at VARCHAR(30), updated_at VARCHAR(30))");
             s.execute("CREATE INDEX IF NOT EXISTS idx_txn_date ON transaction_record(date)");
             s.execute("CREATE TABLE IF NOT EXISTS budget (client_id VARCHAR(36) PRIMARY KEY, category_client_id VARCHAR(36) NOT NULL, budget_year INT NOT NULL, budget_month INT NOT NULL, amount_limit DECIMAL(19,2) NOT NULL, last_modified BIGINT NOT NULL, deleted INT DEFAULT 0, created_at VARCHAR(30), updated_at VARCHAR(30), CONSTRAINT uk_budget UNIQUE(category_client_id, budget_year, budget_month))");
             s.execute("CREATE TABLE IF NOT EXISTS template (client_id VARCHAR(36) PRIMARY KEY, name VARCHAR(64) NOT NULL, amount DECIMAL(19,2), type VARCHAR(16), category_client_id VARCHAR(36), account_client_id VARCHAR(36), note VARCHAR(512), sort_order INT DEFAULT 0, last_modified BIGINT NOT NULL, deleted INT DEFAULT 0, created_at VARCHAR(30), updated_at VARCHAR(30))");
             s.execute("CREATE TABLE IF NOT EXISTS sync_state (device_id VARCHAR(36) PRIMARY KEY, last_sync BIGINT NOT NULL DEFAULT 0)");
+            // 增量同步的 push 水位（本机 last_modified 时钟）。老库靠这条 ALTER 补上，不重建表 ——
+            // 重建会连本地账本一起清掉。H2 的 ADD COLUMN IF NOT EXISTS 可重复执行。
+            s.execute("ALTER TABLE sync_state ADD COLUMN IF NOT EXISTS push_watermark BIGINT DEFAULT 0 NOT NULL");
 
             // 周期记账（自动续费）：规则参与同步；待确认项只存本机
             s.execute("CREATE TABLE IF NOT EXISTS recurring_rule ("
@@ -349,7 +352,7 @@ public class DataManager implements AutoCloseable {
     // ---------------- Transaction ----------------
     public synchronized void upsertTransaction(Transaction t) {
         try (PreparedStatement ps = conn.prepareStatement(
-                "MERGE INTO transaction_record (client_id,date,amount,type,category_client_id,account_client_id,note,photo_path,source,last_modified,deleted,created_at,updated_at) KEY(client_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)")) {
+                "MERGE INTO transaction_record (client_id,date,amount,type,category_client_id,account_client_id,note,source,last_modified,deleted,created_at,updated_at) KEY(client_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)")) {
             ps.setString(1, t.clientId);
             ps.setDate(2, java.sql.Date.valueOf(t.date == null ? LocalDate.now() : t.date));
             ps.setBigDecimal(3, t.amount == null ? BigDecimal.ZERO : t.amount);
@@ -357,12 +360,11 @@ public class DataManager implements AutoCloseable {
             ps.setString(5, t.categoryClientId);
             ps.setString(6, t.accountClientId);
             ps.setString(7, t.note);
-            ps.setString(8, t.photoPath);
-            ps.setString(9, t.source);
-            ps.setLong(10, t.lastModified);
-            ps.setInt(11, t.deleted ? 1 : 0);
-            ps.setString(12, t.createdAt);
-            ps.setString(13, t.updatedAt);
+            ps.setString(8, t.source);
+            ps.setLong(9, t.lastModified);
+            ps.setInt(10, t.deleted ? 1 : 0);
+            ps.setString(11, t.createdAt);
+            ps.setString(12, t.updatedAt);
             ps.executeUpdate();
         } catch (Exception e) {
             throw new RuntimeException(e);
@@ -519,6 +521,18 @@ public class DataManager implements AutoCloseable {
     }
 
     // ---------------- Template ----------------
+    /** 按 clientId 取模板（含软删除墓碑）；同步合并用它做 LWW 比较。 */
+    public synchronized Template findTemplate(String clientId) {
+        try (PreparedStatement ps = conn.prepareStatement("SELECT * FROM template WHERE client_id=?")) {
+            ps.setString(1, clientId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? template(rs) : null;
+            }
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     public synchronized void upsertTemplate(Template t) {
         try (PreparedStatement ps = conn.prepareStatement(
                 "MERGE INTO template (client_id,name,amount,type,category_client_id,account_client_id,note,sort_order,last_modified,deleted,created_at,updated_at) KEY(client_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)")) {
@@ -766,8 +780,31 @@ public class DataManager implements AutoCloseable {
     }
 
     // ---------------- Sync state ----------------
+    //
+    // 两个水位、两个时钟域：last_sync 是服务端 serverTime（pull 用），
+    // push_watermark 是本机 last_modified 的最大值（push 用）。所以必须分列存，不能共用一个值。
+
+    /** pull 水位（服务端时钟）；0 表示还没同步过。 */
     public synchronized long lastSync(String deviceId) {
-        try (PreparedStatement ps = conn.prepareStatement("SELECT last_sync FROM sync_state WHERE device_id=?")) {
+        return readWatermark(deviceId, "last_sync");
+    }
+
+    /** push 水位（本机时钟）；0 表示还没推过。 */
+    public synchronized long pushWatermark(String deviceId) {
+        return readWatermark(deviceId, "push_watermark");
+    }
+
+    public synchronized void saveLastSync(String deviceId, long ts) {
+        writeWatermark(deviceId, "last_sync", ts);
+    }
+
+    public synchronized void savePushWatermark(String deviceId, long ts) {
+        writeWatermark(deviceId, "push_watermark", ts);
+    }
+
+    private long readWatermark(String deviceId, String column) {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT " + column + " FROM sync_state WHERE device_id=?")) {
             ps.setString(1, deviceId);
             try (ResultSet rs = ps.executeQuery()) {
                 return rs.next() ? rs.getLong(1) : 0L;
@@ -777,12 +814,27 @@ public class DataManager implements AutoCloseable {
         }
     }
 
-    public synchronized void saveLastSync(String deviceId, long ts) {
-        try (PreparedStatement ps = conn.prepareStatement(
-                "MERGE INTO sync_state (device_id,last_sync) KEY(device_id) VALUES(?,?)")) {
-            ps.setString(1, deviceId);
-            ps.setLong(2, ts);
-            ps.executeUpdate();
+    /**
+     * 写单列。先 UPDATE、没有行再 INSERT。
+     *
+     * <p>不能图省事写成 {@code MERGE INTO sync_state (device_id,last_sync) KEY(device_id)}：
+     * 只列出其中一列时，另一列会不会被重置成默认值取决于实现，写 pull 水位就可能把 push 水位抹掉，
+     * 反过来也一样 —— 那样每次同步都在两个水位之间互相清零。</p>
+     */
+    private void writeWatermark(String deviceId, String column, long ts) {
+        try {
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "UPDATE sync_state SET " + column + "=? WHERE device_id=?")) {
+                ps.setLong(1, ts);
+                ps.setString(2, deviceId);
+                if (ps.executeUpdate() > 0) return;
+            }
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "INSERT INTO sync_state (device_id," + column + ") VALUES(?,?)")) {
+                ps.setString(1, deviceId);
+                ps.setLong(2, ts);
+                ps.executeUpdate();
+            }
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -845,7 +897,6 @@ public class DataManager implements AutoCloseable {
         t.categoryClientId = rs.getString("category_client_id");
         t.accountClientId = rs.getString("account_client_id");
         t.note = rs.getString("note");
-        t.photoPath = rs.getString("photo_path");
         t.source = rs.getString("source");
         t.lastModified = rs.getLong("last_modified");
         t.deleted = rs.getInt("deleted") == 1;

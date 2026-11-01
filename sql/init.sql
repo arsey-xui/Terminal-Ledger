@@ -69,7 +69,6 @@ CREATE TABLE transaction_record (
     category_client_id VARCHAR(36)   NULL,
     account_client_id  VARCHAR(36)   NULL,
     note               VARCHAR(512)  NULL,
-    photo_path         VARCHAR(1024) NULL,
     source             VARCHAR(32)   NULL,
     last_modified      BIGINT        NOT NULL,
     deleted            TINYINT(1)    NOT NULL DEFAULT 0,
@@ -122,6 +121,37 @@ CREATE TABLE template (
     PRIMARY KEY (id),
     UNIQUE KEY uk_template_client_id (client_id),
     KEY idx_template_sort (sort_order)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ---------------------------------------------------------
+--  recurring_rule：周期记账规则（自动续费 / 固定收支）
+--    注意 type 字段映射到的列名是 txn_type —— 实体里
+--    @Column(name = "txn_type")，别写成 type：那会和
+--    transaction_record 的 type 混淆，也会让 JPA 找不到列。
+--    已建好的旧库请执行 sql/upgrade-recurring-rule.sql 补这张表。
+-- ---------------------------------------------------------
+CREATE TABLE recurring_rule (
+    id                  BIGINT        NOT NULL AUTO_INCREMENT,
+    client_id           VARCHAR(36)   NOT NULL,
+    name                VARCHAR(64)   NOT NULL,
+    amount              DECIMAL(19,2) NOT NULL,
+    txn_type            VARCHAR(16)   NOT NULL,
+    category_client_id  VARCHAR(36)   NULL,
+    account_client_id   VARCHAR(36)   NULL,
+    note                VARCHAR(512)  NULL,
+    interval_unit       VARCHAR(8)    NOT NULL DEFAULT 'MONTH',
+    interval_count      INT           NOT NULL DEFAULT 1,
+    anchor_date         DATE          NOT NULL,
+    last_generated_date DATE          NULL,
+    enabled             TINYINT(1)    NOT NULL DEFAULT 1,
+    sort_order          INT           NULL DEFAULT 0,
+    last_modified       BIGINT        NOT NULL,
+    deleted             TINYINT(1)    NOT NULL DEFAULT 0,
+    created_at          DATETIME      NULL,
+    updated_at          DATETIME      NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_recurring_rule_client_id (client_id),
+    KEY idx_recurring_last_modified (last_modified)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 SET FOREIGN_KEY_CHECKS = 1;

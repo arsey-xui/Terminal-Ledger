@@ -11,6 +11,9 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
         maven { url 'https://jitpack.io' }
+        // 单元测试的 JUnit 5 从本机 Maven 仓库取：这台机器上 Maven 已经把整套
+        // junit-jupiter / junit-platform 缓存到 ~/.m2，离线构建时 Gradle 侧拿不到。
+        mavenLocal()
     }
 }
 rootProject.name = "PersonalAccountingApp"

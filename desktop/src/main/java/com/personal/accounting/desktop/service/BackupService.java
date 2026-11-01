@@ -31,6 +31,10 @@ import java.util.zip.ZipOutputStream;
 /**
  * 数据管理：CSV 导出 + 加密备份包（.zip + AES-256-GCM）一键导入/恢复。
  * 恢复时覆盖当前数据，需调用方二次确认。
+ *
+ * <p>唯一的例外是 {@link AiSettings}：账本数据是覆盖，AI 设置（含 API Key）只补不清 ——
+ * 恢复一份没有 Key 的旧备份不该把现在配好的 Key 清掉。载荷里的字段名与手机端一致，
+ * 两端的备份可互相恢复。</p>
  */
 public class BackupService {
 
@@ -45,7 +49,21 @@ public class BackupService {
         public List<Template> templates;
         /** 周期记账规则（自动续费/固定收支）。手机端的备份也带这个字段，两边可互相恢复。 */
         public List<RecurringRule> recurringRules;
+        /**
+         * AI 消费分析的设置（含 API Key 明文）。整个备份包由口令派生的 AES-256-GCM 加密，
+         * Key 受同一层保护，所以这里存明文：手机端那份 Key 是用本机 Keystore 加密的，
+         * 换机之后打不开，只有明文才能跟着备份走。字段名与手机端一致。
+         */
+        public AiSettings aiSettings;
         public long exportedAt;
+    }
+
+    /** 备份包里的 AI 设置；字段名与手机端一致，两边可互相恢复。 */
+    public static class AiSettings {
+        public String apiKey;
+        public String baseUrl;
+        public String model;
+        public String prompt;
     }
 
     // ---------- CSV ----------
@@ -95,9 +113,10 @@ public class BackupService {
         // 周期规则取全量（含软删除墓碑），和手机端的口径一致：
         // 这样「手机导出 → 电脑恢复 → 再导出」不会丢掉任何一条规则的删除状态。
         p.recurringRules = db.listRecurringRulesModifiedSince(0);
+        p.aiSettings = readAiSettings();
         p.exportedAt = System.currentTimeMillis();
 
-        // 1) 把全量数据序列化，写进一个 zip（可包含照片目录）
+        // 1) 把全量数据序列化，写进一个 zip
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         try (ZipOutputStream zos = new ZipOutputStream(baos)) {
             zos.putNextEntry(new ZipEntry("backup.json"));
@@ -128,6 +147,39 @@ public class BackupService {
         for (Budget b : nullSafe(p.budgets)) db.upsertBudget(b);
         for (Template t : nullSafe(p.templates)) db.upsertTemplate(t);
         for (RecurringRule r : nullSafe(p.recurringRules)) db.upsertRecurringRule(r);
+        applyAiSettings(p.aiSettings);
+    }
+
+    /** 导出当前 AI 设置（Key 为明文，整个备份包由口令加密）。 */
+    private static AiSettings readAiSettings() {
+        AiSettings s = new AiSettings();
+        s.apiKey = AiConfig.apiKey();
+        s.baseUrl = AiConfig.baseUrl();
+        s.model = AiConfig.model();
+        s.prompt = AiConfig.prompt();
+        return s;
+    }
+
+    /**
+     * 恢复备份里的 AI 设置：<b>只补不清</b>。
+     *
+     * <p>备份里没有 Key（字段缺失或为空）就整块跳过：恢复一份「配 Key 之前」做的旧备份，
+     * 不应该把现在配好的 Key 清掉。手机端同一段逻辑也是这个规则。</p>
+     */
+    private static boolean applyAiSettings(AiSettings s) throws IOException {
+        if (s == null) return false;
+        String key = s.apiKey == null ? "" : s.apiKey.trim();
+        if (key.isEmpty()) return false;
+        AiConfig.save(true, key,
+                blankToLocal(s.baseUrl, AiConfig.baseUrl()),
+                blankToLocal(s.model, AiConfig.model()),
+                s.prompt == null ? AiConfig.prompt() : s.prompt);
+        return true;
+    }
+
+    /** 备份里该字段为空时保留本机值（同样是「只补不清」）。 */
+    private static String blankToLocal(String fromBackup, String local) {
+        return (fromBackup == null || fromBackup.trim().isEmpty()) ? local : fromBackup.trim();
     }
 
     private static <T> List<T> nullSafe(List<T> x) {

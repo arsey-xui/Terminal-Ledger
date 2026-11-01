@@ -14,6 +14,7 @@ public final class SyncConfig {
 
     private static final String PREFS = "sync_prefs";
     private static final String KEY_DEVICE_ID = "device_id";
+    private static final String KEY_TOKEN = "sync_token";
 
     private SyncConfig() {
     }
@@ -21,6 +22,33 @@ public final class SyncConfig {
     /** 是否已配置后端地址（BASE_URL）。 */
     public static boolean isConfigured() {
         return BASE_URL != null && !BASE_URL.trim().isEmpty();
+    }
+
+    /**
+     * 共享密钥（对应后端 {@code accounting.sync.shared-secret}）。
+     *
+     * <p>留空表示「后端没开校验」，请求里就不带这个头 —— 后端没配密钥时也不看它。</p>
+     */
+    public static String TOKEN = "";
+
+    /** 从 SharedPreferences 读回密钥（启动时调用）。 */
+    public static void loadToken(Context context) {
+        String saved = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getString(KEY_TOKEN, "");
+        TOKEN = saved == null ? "" : saved;
+    }
+
+    /** 保存密钥（写盘 + 更新静态值）。 */
+    public static void saveToken(Context context, String token) {
+        String value = token == null ? "" : token.trim();
+        TOKEN = value;
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().putString(KEY_TOKEN, value).apply();
+    }
+
+    /** 当前密钥（永不为 null）。没配就是空串，请求里带上空头也不影响未开启校验的后端。 */
+    public static String token() {
+        return TOKEN == null ? "" : TOKEN.trim();
     }
 
     public static String deviceId(Context context) {
